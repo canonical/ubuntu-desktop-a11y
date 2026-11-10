@@ -96,6 +96,11 @@ plugs:
     bus: session
     name: org.a11y.Bus
 
+  # T16 finding: the greeter session is wayland; orca's Gdk needs the
+  # session snap's relocated wayland socket (see the orca app comment).
+  wayland-client:
+    interface: wayland
+
 slots:
   dbus-a11y:
     interface: dbus
@@ -125,6 +130,14 @@ apps:
     command: bin/run-orca
     plugs:
       - a11y-bus-client
+      # T16 finding: orca on the greeter dies at Gdk keymap init because
+      # the display never opens - the session's wayland socket lives at
+      # /run/user/<uid>/snap.ubuntu-desktop-session/wayland-0 and the
+      # orca profile has no grant for it (connect denial, class=file,
+      # verbatim in T16). The wayland interface + a connect to the
+      # session snap's wayland slot is the client grant; connect at
+      # image assembly like the dbus edges.
+      - wayland-client
 
   speech-dispatcher:
     command: bin/run-speech-dispatcher
