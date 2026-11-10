@@ -1,0 +1,33 @@
+#!/bin/sh
+# App "speech-dispatcher" launcher.
+#
+# Runs as a snapd socket-activated user daemon: the generated socket
+# unit passes the listening fd (speechd supports systemd socket
+# activation via sd_listen_fds), and the command line mirrors the
+# deb's own user service ExecStart (/usr/bin/speech-dispatcher -s -t 0:
+# single-process mode, no speechd-internal timeout shutdown).
+
+case "$(uname -m)" in
+    x86_64)  TRIPLET=x86_64-linux-gnu ;;
+    aarch64) TRIPLET=aarch64-linux-gnu ;;
+    *)       TRIPLET="" ;;
+esac
+
+# Audio: the audio-playback plug (connected to the pipewire snap)
+# grants this process /run/user/<uid>/snap.pipewire/pulse/native
+# (interfaces/builtin/audio_playback.go:182 forms that path from the
+# slot snap's instance name on Core). $XDG_RUNTIME_DIR inside the snap
+# is the snap-PRIVATE runtime dir, so recover the real per-UID dir by
+# stripping the snap.<name> suffix - this is the fat line's
+# PULSE_SERVER fix, with the absolute Core socket path.
+real_rt="${XDG_RUNTIME_DIR%/snap.*}"
+export PULSE_SERVER="unix:${real_rt}/snap.pipewire/pulse/native"
+
+# libespeak-ng honours ESPEAK_DATA_PATH (<parent>/espeak-ng-data);
+# the layout bind mirrors the data to the compiled-in absolute path as
+# a second safety net.
+if [ -n "$TRIPLET" ]; then
+    export ESPEAK_DATA_PATH="$SNAP/usr/lib/$TRIPLET"
+fi
+
+exec "$SNAP/usr/bin/speech-dispatcher" -s -t 0

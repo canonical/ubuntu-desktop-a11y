@@ -1,0 +1,34 @@
+#!/bin/sh
+# App "bus" launcher (T11 design review section 3).
+#
+# snapd's dbus activation Exec's this unit when any client calls
+# org.a11y.Bus.GetAddress on the session bus; the wrapper stays in the
+# foreground (daemon: dbus) and delegates everything to
+# at-spi-bus-launcher, which:
+#   - registers org.a11y.Bus on the session bus it inherits via
+#     DBUS_SESSION_BUS_ADDRESS,
+#   - spawns its own PRIVATE accessibility dbus-daemon
+#     (compiled-in fallback /usr/bin/dbus-daemon -> the core26 base's
+#     binary, exec-allowed ixr by the strict template; config file
+#     /usr/share/defaults/at-spi2/accessibility.conf reached via the
+#     snap layout, keeping <type>accessibility</type> mediation),
+#   - places the private bus under $XDG_RUNTIME_DIR/at-spi (in a strict
+#     snap: /run/user/<uid>/snap.ubuntu-desktop-a11y/at-spi), and
+#   - lets the private bus activate /usr/libexec/at-spi2-registryd
+#     (layout symlink) from the staged accessibility-services dir
+#     (layout bind).
+# Nothing is hand-orchestrated here on purpose; the launcher's own
+# config decides where its private bus lives.
+
+# User daemons normally inherit DBUS_SESSION_BUS_ADDRESS from the
+# systemd user manager. Keep a defensive fallback for bare contexts
+# so GetAddress activation still has a bus to register on.
+if [ -z "${DBUS_SESSION_BUS_ADDRESS:-}" ]; then
+    # strip the snap-private /snap.<name> suffix to recover the real
+    # per-UID runtime dir; if the suffix is absent (unconfined run)
+    # XDG_RUNTIME_DIR is already the real one.
+    real_rt="${XDG_RUNTIME_DIR%/snap.*}"
+    export DBUS_SESSION_BUS_ADDRESS="unix:path=${real_rt}/bus"
+fi
+
+exec "$SNAP/usr/libexec/at-spi-bus-launcher" --launch-immediately

@@ -1,0 +1,25 @@
+#!/bin/sh
+# App "orca" launcher.
+#
+# The deb's /usr/bin/orca has shebang #!/usr/bin/python3, which inside
+# the snap's mount namespace would resolve against the BASE (core26
+# ships no python). T4's host-side shebang rewrite therefore becomes a
+# wrapper fix here: exec the staged interpreter directly.
+# Env plumbing mirrors pipewire-snap's env pattern.
+
+# gi overrides (Atspi.py etc.) and orca's modules live in the staged
+# Debian dist-packages tree.
+export PYTHONPATH="$SNAP/usr/lib/python3/dist-packages${PYTHONPATH:+:$PYTHONPATH}"
+
+# glib schemas (org.gnome.Orca + org.gnome.desktop.a11y.*) are compiled
+# into $SNAP/usr/share/glib-2.0/schemas by the a11y-stack part; glib
+# looks in $XDG_DATA_DIRS/glib-2.0/schemas.
+export XDG_DATA_DIRS="$SNAP/usr/share${XDG_DATA_DIRS:+:$XDG_DATA_DIRS}"
+
+# speech-dispatcher runs as a snapd socket-activated user daemon of the
+# SAME snap: its socket lands in this snap's private runtime dir, which
+# is exactly what $XDG_RUNTIME_DIR points at inside the snap. Format is
+# speechd's "unix:path:SOCKET" address line (speechd/client.py).
+export SPEECHD_ADDRESS="unix:path:${XDG_RUNTIME_DIR}/speech-dispatcher/speechd.sock"
+
+exec "$SNAP/usr/bin/python3" "$SNAP/usr/bin/orca" --replace "$@"

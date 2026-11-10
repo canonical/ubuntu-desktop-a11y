@@ -1,0 +1,199 @@
+name: ubuntu-desktop-a11y
+base: core26
+version: "0.1"
+summary: Accessibility provider snap (AT-SPI bus, Orca, speech-dispatcher)
+description: |
+  Spike 1 of the thin-line accessibility work: one strictly confined
+  accessibility provider on the STOCK core26 base, implementing the
+  T11 design review (notes/todo/a11y-work/T11-thin-a11y-design-review.txt
+  sections 2-4).
+
+  Three apps in one snap (socket/label relationships are the unproven
+  boundary, so the payload is not split):
+
+    bus                at-spi-bus-launcher owning org.a11y.Bus on the
+                       session bus (dbus slot + activates-on). It spawns
+                       its own private accessibility dbus-daemon and
+                       activates at-spi2-registryd from staged config;
+                       nothing here is hand-orchestrated.
+    orca               screen reader with the python3/gi/typelib stack.
+    speech-dispatcher  snapd socket-activated user speech daemon with
+                       the espeak-ng output module; audio goes to the
+                       pipewire snap via the audio-playback plug.
+
+  Staging regular debs (stage-packages) is normal snap packaging; the
+  fat/thin staging restriction the project enforces is base-snap
+  specific (T10) and does not apply here. This snap is meant to be
+  image-seeded with its connections established before the session
+  starts (T11 review section 6).
+grade: devel
+confinement: strict
+license: GPL-2.0-or-later AND LGPL-2.1-or-later AND BSD-3-Clause
+
+platforms:
+  amd64:
+    build-on: [amd64]
+    build-for: [amd64]
+
+# Absolute paths that at-spi-bus-launcher / dbus-daemon / libespeak-ng
+# reach for inside the mount namespace (verified via strings on the
+# 2.60.4 debs; core26 rev 750 ships none of these paths, so every
+# layout here is conflict-free):
+#  - /usr/share/defaults/at-spi2/accessibility.conf
+#      launcher passes --config-file=/usr/share/defaults/at-spi2/
+#      accessibility.conf (after checking /etc/at-spi2/, which neither
+#      base nor snap ship). Preserves <type>accessibility</type>.
+#  - /usr/share/dbus-1/accessibility-services
+#      <servicedir> in accessibility.conf; the private bus activates
+#      org.a11y.atspi.Registry from here; the service file execs
+#      /usr/libexec/at-spi2-registryd, hence the symlink layout below.
+#  - /usr/bin/dbus-daemon
+#      NOT laid out: core26 ships it, the launcher's compiled-in
+#      fallback path hits the base's binary directly, and the strict
+#      AppArmor template already grants it ixr
+#      (interfaces/apparmor/template.go:566). A symlink layout would
+#      fail anyway: snap-update-ns refuses to replace an existing base
+#      file (cmd/snap-update-ns/change.go:187 "existing file in the
+#      way") and the base does not ship dbus-broker-launch, so the
+#      launcher deterministically uses the mediation-capable
+#      dbus-daemon.
+#  - /usr/lib/x86_64-linux-gnu/espeak-ng-data
+#      libespeak-ng's compiled-in data path; env fallback
+#      ESPEAK_DATA_PATH is also set in the speech-dispatcher wrapper.
+layout:
+  /usr/share/defaults/at-spi2:
+    bind: $SNAP/usr/share/defaults/at-spi2
+  /usr/share/dbus-1/accessibility-services:
+    bind: $SNAP/usr/share/dbus-1/accessibility-services
+  /usr/libexec/at-spi2-registryd:
+    symlink: $SNAP/usr/libexec/at-spi2-registryd
+  /usr/lib/$CRAFT_ARCH_TRIPLET_BUILD_FOR/espeak-ng-data:
+    bind: $SNAP/usr/lib/$CRAFT_ARCH_TRIPLET_BUILD_FOR/espeak-ng-data
+
+environment:
+  # pipewire-snap env/LD_LIBRARY_PATH precedent; host paths first so
+  # base libraries keep precedence, staged libs fill the gaps.
+  LD_LIBRARY_PATH: ${LD_LIBRARY_PATH:+$LD_LIBRARY_PATH:}/usr/lib:/usr/lib/$CRAFT_ARCH_TRIPLET_BUILD_FOR:$SNAP/usr/lib:$SNAP/usr/lib/$CRAFT_ARCH_TRIPLET_BUILD_FOR
+
+plugs:
+  # Client side of our own bus for the same-snap reader (T11 review
+  # section 3 chain steps 1-5): grants orca the session bus socket and
+  # the GetAddress verbs against org.a11y.Bus. Same-snap plug/slot
+  # connections are implicit; external-client policy is gate work.
+  a11y-bus-client:
+    interface: dbus
+    bus: session
+    name: org.a11y.Bus
+
+slots:
+  dbus-a11y:
+    interface: dbus
+    bus: session
+    name: org.a11y.Bus
+
+apps:
+  bus:
+    command: bin/launch-a11y-bus
+    daemon: dbus
+    daemon-scope: user
+    activates-on:
+      - dbus-a11y
+    slots:
+      - dbus-a11y
+
+  orca:
+    command: bin/run-orca
+    plugs:
+      - a11y-bus-client
+
+  speech-dispatcher:
+    command: bin/run-speech-dispatcher
+    daemon: simple
+    daemon-scope: user
+    restart-condition: on-failure
+    sockets:
+      # renderListenStream() rewrites $XDG_RUNTIME_DIR for user daemons
+      # to %t/snap.<snapname> (wrappers/internal/service_socket_gen.go:53),
+      # i.e. the deb's own socket path (%t/speech-dispatcher/speechd.sock)
+      # translated into our snap-private runtime dir. Same-snap clients
+      # (orca) reach it via $XDG_RUNTIME_DIR directly.
+      speechd-socket:
+        listen-stream: $XDG_RUNTIME_DIR/speech-dispatcher/speechd.sock
+        socket-mode: 0666
+    plugs:
+      - audio-playback
+
+parts:
+  launchers:
+    plugin: dump
+    source: launchers
+    organize:
+      launch-a11y-bus: bin/launch-a11y-bus
+      run-orca: bin/run-orca
+      run-speech-dispatcher: bin/run-speech-dispatcher
+
+  a11y-stack:
+    plugin: nil
+    build-packages:
+      # glib-compile-schemas (libglib2.0-bin on 26.04)
+      - libglib2.0-bin
+    stage-packages:
+      # --- bus payload (at-spi2-core ships at-spi-bus-launcher,
+      # at-spi2-registryd, accessibility.conf and the
+      # accessibility-services dir together, per T11 review section 3)
+      - at-spi2-core
+      - at-spi2-common
+      # --- orca + python/gi stack. T4's proven 26.04 set, minus
+      # brltty/xbrlapi: braille hardware is a separate privilege domain
+      # (T11 review section 2); orca's runtime imports DO include
+      # brlapi/louis (braille.py/brlmon.py), so the python bindings and
+      # libbrlapi come along, but no brltty daemon.
+      # T4 gotcha applied: everything below is explicit, because the
+      # build environment's dpkg state silently skips already-installed
+      # entries from transitive resolution.
+      - orca
+      - python3-minimal
+      - python3.14-minimal
+      - libpython3.14-minimal
+      - libpython3.14-stdlib
+      - python3-gi
+      - libgirepository-2.0-0
+      - gir1.2-glib-2.0
+      - gir1.2-atspi-2.0
+      - gir1.2-gtk-3.0
+      - gir1.2-pango-1.0
+      - gir1.2-wnck-3.0
+      - gir1.2-gstreamer-1.0
+      - python3-brlapi
+      - python3-louis
+      - python3-cairo
+      - python3-dasbus
+      - python3-dbus
+      - python3-psutil
+      - python3-setproctitle
+      - python3-speechd
+      - libltdl7
+      - gsettings-desktop-schemas
+      - dconf-gsettings-backend
+      # --- speech payload (T4: espeak-ng-data is its own 24MB package;
+      # the espeak-ng OUTPUT MODULE is the separate
+      # speech-dispatcher-espeak-ng package; the CLI is deliberately
+      # not staged - not on stock either)
+      - speech-dispatcher
+      - speech-dispatcher-espeak-ng
+      - speech-dispatcher-audio-plugins
+      - libespeak-ng1
+      - espeak-ng-data
+      - libspeechd2
+    override-build: |
+      craftctl default
+      # orca's prefs schema (org.gnome.Orca) and the session a11y
+      # schemas (org.gnome.desktop.a11y.* via gsettings-desktop-schemas)
+      # must be compiled for GSettings users inside the snap; glib
+      # resolves schemas from $XDG_DATA_DIRS/glib-2.0/schemas and the
+      # orca wrapper points XDG_DATA_DIRS at $SNAP/usr/share.
+      glib-compile-schemas "$CRAFT_PART_INSTALL/usr/share/glib-2.0/schemas"
+    stage:
+      - -usr/share/doc
+      - -usr/share/man
+      - -usr/share/lintian
