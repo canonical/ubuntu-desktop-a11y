@@ -31,4 +31,13 @@ if [ -z "${DBUS_SESSION_BUS_ADDRESS:-}" ]; then
     export DBUS_SESSION_BUS_ADDRESS="unix:path=${real_rt}/bus"
 fi
 
+# gsettings-desktop-schemas is staged (the launcher reads GSettings at
+# startup); glib resolves the default schema source from
+# $XDG_DATA_DIRS/glib-2.0/schemas. T13 runtime finding: without this
+# the launcher aborts with "Cannot get the default
+# GSettingsSchemaSource - is the gsettings-desktop-schemas package
+# installed?" before owning org.a11y.Bus (the global snapcraft
+# environment only carries LD_LIBRARY_PATH/PATH).
+export XDG_DATA_DIRS="$SNAP/usr/share${XDG_DATA_DIRS:+:$XDG_DATA_DIRS}"
+
 exec "$SNAP/usr/libexec/at-spi-bus-launcher" --launch-immediately
