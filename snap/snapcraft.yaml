@@ -100,6 +100,15 @@ apps:
       - dbus-a11y
     slots:
       - dbus-a11y
+    plugs:
+      # T13 runtime finding: without network-bind the seccomp profile has
+      # NO bind syscall at all (the template only adds `bind` when
+      # AppArmor is not Full, or via interfaces - the private
+      # dbus-daemon's unix socket bind then dies at seccomp with EPERM
+      # before AppArmor mediation is even consulted). Same route the
+      # speech-dispatcher app already uses; AppArmor's unix class still
+      # mediates the actual address.
+      - network-bind
 
   orca:
     command: bin/run-orca

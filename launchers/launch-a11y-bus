@@ -38,6 +38,10 @@ fi
 # GSettingsSchemaSource - is the gsettings-desktop-schemas package
 # installed?" before owning org.a11y.Bus (the global snapcraft
 # environment only carries LD_LIBRARY_PATH/PATH).
-export XDG_DATA_DIRS="$SNAP/usr/share${XDG_DATA_DIRS:+:$XDG_DATA_DIRS}"
+# Deliberately NOT appending the inherited value: the greeter session
+# env carries content-snap data dirs (/snap/gnome-desktop-runtime/...)
+# which a confined launcher is denied to read (AppArmor noise AVCs);
+# $SNAP/usr/share holds everything the launcher needs.
+export XDG_DATA_DIRS="$SNAP/usr/share"
 
 exec "$SNAP/usr/libexec/at-spi-bus-launcher" --launch-immediately
