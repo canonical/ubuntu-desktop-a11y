@@ -75,6 +75,11 @@ layout:
   # staged config there (conflict-free: the base lacks the path).
   /etc/speech-dispatcher:
     bind: $SNAP/etc/speech-dispatcher
+  # T13 runtime finding #2: the output modules are exec'd from the
+  # compiled-in /usr/lib/speech-dispatcher-modules/ (base lacks the
+  # dir; the daemon logged "Exec of module ... failed with error 2").
+  /usr/lib/speech-dispatcher-modules:
+    bind: $SNAP/usr/lib/speech-dispatcher-modules
 
 environment:
   # pipewire-snap env/LD_LIBRARY_PATH precedent; host paths first so
