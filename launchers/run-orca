@@ -18,8 +18,11 @@ export XDG_DATA_DIRS="$SNAP/usr/share${XDG_DATA_DIRS:+:$XDG_DATA_DIRS}"
 
 # speech-dispatcher runs as a snapd socket-activated user daemon of the
 # SAME snap: its socket lands in this snap's private runtime dir, which
-# is exactly what $XDG_RUNTIME_DIR points at inside the snap. Format is
-# speechd's "unix:path:SOCKET" address line (speechd/client.py).
-export SPEECHD_ADDRESS="unix:path:${XDG_RUNTIME_DIR}/speech-dispatcher/speechd.sock"
+# is exactly what $XDG_RUNTIME_DIR points at inside the snap. T13
+# runtime finding: speechd.client._connection_arguments_from_address
+# (the staged 0.12.1) only accepts the method string "unix_socket" with
+# the path as the SECOND ':'-field — "unix:path:..." raises "Unknown
+# communication method in address".
+export SPEECHD_ADDRESS="unix_socket:${XDG_RUNTIME_DIR}/speech-dispatcher/speechd.sock"
 
 exec "$SNAP/usr/bin/python3" "$SNAP/usr/bin/orca" --replace "$@"

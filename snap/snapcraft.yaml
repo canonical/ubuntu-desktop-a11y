@@ -69,6 +69,12 @@ layout:
     symlink: $SNAP/usr/libexec/at-spi2-registryd
   /usr/lib/$CRAFT_ARCH_TRIPLET_BUILD_FOR/espeak-ng-data:
     bind: $SNAP/usr/lib/$CRAFT_ARCH_TRIPLET_BUILD_FOR/espeak-ng-data
+  # T13 runtime finding: speech-dispatcher's compiled-in config path is
+  # /etc/speech-dispatcher/speechd.conf; core26 ships no such dir so the
+  # daemon exits with "Error opening configuration file". Bind the
+  # staged config there (conflict-free: the base lacks the path).
+  /etc/speech-dispatcher:
+    bind: $SNAP/etc/speech-dispatcher
 
 environment:
   # pipewire-snap env/LD_LIBRARY_PATH precedent; host paths first so
