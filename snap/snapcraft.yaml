@@ -120,6 +120,19 @@ slots:
     bus: session
     name: org.a11y.Bus
 
+  # T18 E2 (T19): the provider's own daemon must be able to mediate its
+  # private accessibility bus, which needs the libapparmor kernel-query
+  # capability (aa_find_mountpoint reads /proc/<pid>/mounts;
+  # aa_query_label opens /sys/kernel/security/apparmor/.access O_RDWR).
+  # The strict template grants neither, so dbus' bus_apparmor_pre_init
+  # fail-opens and the private bus runs UNMEDIATED. The
+  # accessibility-provider slot's permanent snippet carries the query
+  # grants (thumbnailer-service precedent shape). The plain dbus slot
+  # above keeps activation and name ownership; the provider-interface
+  # consolidation (client rules etc.) is upstream work.
+  accessibility-provider:
+    interface: accessibility-provider
+
 apps:
   bus:
     command: bin/launch-a11y-bus
@@ -129,6 +142,7 @@ apps:
       - dbus-a11y
     slots:
       - dbus-a11y
+      - accessibility-provider
     plugs:
       # T13 runtime finding: without network-bind the seccomp profile has
       # NO bind syscall at all (the template only adds `bind` when
