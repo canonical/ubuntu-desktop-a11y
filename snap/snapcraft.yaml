@@ -225,6 +225,11 @@ parts:
       - libespeak-ng1
       - espeak-ng-data
       - libspeechd2
+      # T13 finding: the staged pulse audio output plugin dlopens
+      # libpulsecommon-<ver>.so, which ships with libpulse0 (not staged
+      # before); without it the espeak-ng module dies at audio init
+      # ("libpulsecommon-17.0.so: cannot open shared object file").
+      - libpulse0
     override-build: |
       craftctl default
       # orca's prefs schema (org.gnome.Orca) and the session a11y
