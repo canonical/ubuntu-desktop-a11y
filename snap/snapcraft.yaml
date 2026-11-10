@@ -168,6 +168,21 @@ parts:
       # accessibility-services dir together, per T11 review section 3)
       - at-spi2-core
       - at-spi2-common
+      # T14 userdb fix: the private dbus-daemon drops connections whose
+      # uid it cannot resolve. Extrausers-only session users are resolved
+      # through the NSS chain (base nsswitch already lists "extrausers"
+      # and glibc dlopens libnss_extrausers.so.2 by soname from the
+      # LD_LIBRARY_PATH this snap exports). Stage the module so the snap
+      # is self-contained and does not depend on the base carrying it
+      # (core26 rev 750 does ship it, at the non-multiarch path
+      # /usr/lib/libnss_extrausers.so.2, which LD_LIBRARY_PATH also
+      # reaches; the staged copy under $SNAP/usr/lib/<triplet> is the
+      # guaranteed fallback). The module reads /var/lib/extrausers/{passwd,
+      # group}, visible in-ns and granted r by the strict AppArmor template
+      # (template.go: /etc/nsswitch.conf r, /var/lib/extrausers/{passwd,
+      # group} r). Dynamic (userdbd-only) uids remain unresolvable in-ns
+      # by any file-backed module - see T14 deliverable.
+      - libnss-extrausers
       # --- orca + python/gi stack. T4's proven 26.04 set, minus
       # brltty/xbrlapi: braille hardware is a separate privilege domain
       # (T11 review section 2); orca's runtime imports DO include
