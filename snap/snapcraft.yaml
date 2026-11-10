@@ -59,7 +59,13 @@ platforms:
 #      dbus-daemon.
 #  - /usr/lib/x86_64-linux-gnu/espeak-ng-data
 #      libespeak-ng's compiled-in data path; env fallback
-#      ESPEAK_DATA_PATH is also set in the speech-dispatcher wrapper.
+#      ESPEAK_DATA_PATH is also set in the speech-dispatcher #      ESPEAK_DATA_PATH is also set in the speech-dispatcher wrapper.
+#  - /usr/share/X11/xkb
+#      T16 finding: with the wayland grant (orca wayland plug) Gdk
+#      opens the display but xkbcommon dies at "Failed to add any
+#      default include path (system path: /usr/share/X11/xkb)" - the
+#      base ships no xkb data (verified /snap/core26/current). Bind
+#      the staged xkeyboard-config there.
 layout:
   /usr/share/defaults/at-spi2:
     bind: $SNAP/usr/share/defaults/at-spi2
@@ -69,6 +75,8 @@ layout:
     symlink: $SNAP/usr/libexec/at-spi2-registryd
   /usr/lib/$CRAFT_ARCH_TRIPLET_BUILD_FOR/espeak-ng-data:
     bind: $SNAP/usr/lib/$CRAFT_ARCH_TRIPLET_BUILD_FOR/espeak-ng-data
+  /usr/share/X11/xkb:
+    bind: $SNAP/usr/share/X11/xkb
   # T13 runtime finding: speech-dispatcher's compiled-in config path is
   # /etc/speech-dispatcher/speechd.conf; core26 ships no such dir so the
   # daemon exits with "Error opening configuration file". Bind the
@@ -243,6 +251,9 @@ parts:
       # before); without it the espeak-ng module dies at audio init
       # ("libpulsecommon-17.0.so: cannot open shared object file").
       - libpulse0
+      # T16 finding: xkbcommon needs the XKB data (rules/evdev); the base
+      # ships none and the layout above binds it to the compiled-in path.
+      - xkeyboard-config
     override-build: |
       craftctl default
       # orca's prefs schema (org.gnome.Orca) and the session a11y
