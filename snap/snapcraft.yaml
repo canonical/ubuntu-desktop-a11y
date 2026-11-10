@@ -65,7 +65,7 @@ platforms:
 #      opens the display but xkbcommon dies at "Failed to add any
 #      default include path (system path: /usr/share/X11/xkb)" - the
 #      base ships no xkb data (verified /snap/core26/current). Bind
-#      the staged xkeyboard-config there.
+#      the staged xkb-data (the xkeyboard-config source binary) there.
 layout:
   /usr/share/defaults/at-spi2:
     bind: $SNAP/usr/share/defaults/at-spi2
@@ -253,7 +253,7 @@ parts:
       - libpulse0
       # T16 finding: xkbcommon needs the XKB data (rules/evdev); the base
       # ships none and the layout above binds it to the compiled-in path.
-      - xkeyboard-config
+      - xkb-data
     override-build: |
       craftctl default
       # orca's prefs schema (org.gnome.Orca) and the session a11y
