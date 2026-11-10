@@ -157,6 +157,14 @@ apps:
     command: bin/run-orca
     plugs:
       - a11y-bus-client
+      # T19 phase 2: under REAL mediation (the private bus daemon now
+      # queries AppArmor - T18 E2 closed) the reader needs the
+      # bus=accessibility client rules: the desktop-legacy plug carries
+      # the stock client recipe (dbus-accessibility-strict handshake,
+      # the atspi sends against the registry, the event receive rule
+      # and the conventional at-spi socket path). This is the same
+      # client path any store a11y app uses.
+      - desktop-legacy
       # T16 finding: orca on the greeter dies at Gdk keymap init because
       # the display never opens - the session's wayland socket lives at
       # /run/user/<uid>/snap.ubuntu-desktop-session/wayland-0 and the

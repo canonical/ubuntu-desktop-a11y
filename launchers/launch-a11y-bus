@@ -31,6 +31,18 @@ if [ -z "${DBUS_SESSION_BUS_ADDRESS:-}" ]; then
     export DBUS_SESSION_BUS_ADDRESS="unix:path=${real_rt}/bus"
 fi
 
+# T19 D2 (T11 §3): bind the private bus on the CONVENTIONAL per-uid
+# at-spi path instead of the snap-private runtime dir. snap-run rewrites
+# XDG_RUNTIME_DIR to /run/user/<uid>/snap.<instance>; strip that suffix
+# (a no-op when the suffix is absent). Client-side access to the socket
+# comes from desktop-legacy's stock conventional-path rule, so no
+# snap.* path wildcard is needed anywhere (T17 D2: a snap.* wildcard
+# would admit every snap's at-spi socket for X11-property
+# redirection). The daemon-side grants for this path live in the
+# accessibility-provider slot's snippet.
+real_rt="${XDG_RUNTIME_DIR%/snap.*}"
+export XDG_RUNTIME_DIR="$real_rt"
+
 # gsettings-desktop-schemas is staged (the launcher reads GSettings at
 # startup); glib resolves the default schema source from
 # $XDG_DATA_DIRS/glib-2.0/schemas. T13 runtime finding: without this
