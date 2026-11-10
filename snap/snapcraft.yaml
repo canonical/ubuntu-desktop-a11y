@@ -75,8 +75,13 @@ layout:
     symlink: $SNAP/usr/libexec/at-spi2-registryd
   /usr/lib/$CRAFT_ARCH_TRIPLET_BUILD_FOR/espeak-ng-data:
     bind: $SNAP/usr/lib/$CRAFT_ARCH_TRIPLET_BUILD_FOR/espeak-ng-data
+  # xkb-data on 26.04 ships the data in /usr/share/xkeyboard-config-2/
+  # with /usr/share/X11/xkb as a compat SYMLINK (xkb -> ../xkeyboard-
+  # config-2); a bind layout would fail the pack-time directory check on
+  # the symlink, so reproduce the deb's shape with a symlink layout to
+  # the staged real directory.
   /usr/share/X11/xkb:
-    bind: $SNAP/usr/share/X11/xkb
+    symlink: $SNAP/usr/share/xkeyboard-config-2
   # T13 runtime finding: speech-dispatcher's compiled-in config path is
   # /etc/speech-dispatcher/speechd.conf; core26 ships no such dir so the
   # daemon exits with "Error opening configuration file". Bind the
@@ -254,6 +259,14 @@ parts:
       # T16 finding: xkbcommon needs the XKB data (rules/evdev); the base
       # ships none and the layout above binds it to the compiled-in path.
       - xkb-data
+    override-prime: |
+      craftctl default
+      echo "=== T16-DEBUG prime X11 tree:"
+      ls -la "$CRAFT_PRIME/usr/share/X11/" 2>&1 | head -8
+      ls "$CRAFT_PRIME/usr/share/X11/xkb/" 2>&1 | head -8
+      echo "=== T16-DEBUG install X11 tree:"
+      ls -la "$CRAFT_PART_INSTALL/../install/usr/share/X11/" 2>&1 | head -8 || true
+      find /root/parts/a11y-stack/install/usr/share/X11 -maxdepth 1 2>/dev/null | head -8
     override-build: |
       craftctl default
       # orca's prefs schema (org.gnome.Orca) and the session a11y
