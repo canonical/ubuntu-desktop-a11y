@@ -16,6 +16,17 @@ export PYTHONPATH="$SNAP/usr/lib/python3/dist-packages${PYTHONPATH:+:$PYTHONPATH
 # looks in $XDG_DATA_DIRS/glib-2.0/schemas.
 export XDG_DATA_DIRS="$SNAP/usr/share${XDG_DATA_DIRS:+:$XDG_DATA_DIRS}"
 
+# T14 finding #3: the greeter session env carries GI_TYPELIB_PATH (and
+# GSETTINGS_SCHEMA_DIR) pointing at the gnome-desktop-runtime content
+# snap; inside the orca label those reads are DENIED (content-interface
+# grants only the content provider's snaps) and typelib discovery fails
+# ("Namespace Atspi not available"). Same precedent as 63ed7fb/4937cb0:
+# pin the pointer at the snap's own tree instead of inheriting the
+# session's. The snap stages gir1.2-atspi-2.0 et al into
+# $SNAP/usr/lib/<triplet>/girepository-1.0; the session env is dropped
+# entirely so the denied content-snap paths are never searched.
+export GI_TYPELIB_PATH="$SNAP/usr/lib/x86_64-linux-gnu/girepository-1.0"
+
 # speech-dispatcher runs as a snapd socket-activated user daemon of the
 # SAME snap: its socket lands in this snap's private runtime dir, which
 # is exactly what $XDG_RUNTIME_DIR points at inside the snap. T13
