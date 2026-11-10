@@ -121,7 +121,12 @@ apps:
         listen-stream: $XDG_RUNTIME_DIR/speech-dispatcher/speechd.sock
         socket-mode: 0666
     plugs:
+      # snapd requires network-bind on apps that declare sockets
+      # (snap/validate.go socket validation: "network-bind" interface
+      # plug is required when sockets are used) - it mediates the
+      # listen; this stays a local unix socket.
       - audio-playback
+      - network-bind
 
 parts:
   launchers:
