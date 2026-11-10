@@ -210,6 +210,20 @@ parts:
     build-packages:
       # glib-compile-schemas (libglib2.0-bin on 26.04)
       - libglib2.0-bin
+    override-stage: |
+      craftctl default
+      # T19 phase 3 (real-mediation matrix finding): the registry's
+      # activation entry must carry the provider's label. dbus'
+      # bus_apparmor_allows_send checks only the SENDER side for
+      # activation, building the query with the entry's
+      # AssumedAppArmorLabel; without it dst_label is empty and no
+      # peer-label condition can match, so every confined
+      # desktop-legacy client's first registry call (which triggers the
+      # activation) is denied (verbatim T19 matrix: mask="send"
+      # label="snap.ubuntu-desktop-a11y.orca" name="org.a11y.atspi.
+      # Registry", no peer_label). snapd's own generated activation
+      # files carry the same field (T13 §1b).
+      printf 'AssumedAppArmorLabel=snap.ubuntu-desktop-a11y.bus\n' >> "$CRAFT_STAGE/usr/share/dbus-1/accessibility-services/org.a11y.atspi.Registry.service"
     stage-packages:
       # --- bus payload (at-spi2-core ships at-spi-bus-launcher,
       # at-spi2-registryd, accessibility.conf and the
