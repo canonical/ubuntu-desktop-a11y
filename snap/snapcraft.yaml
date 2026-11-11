@@ -141,6 +141,18 @@ apps:
     command: bin/launch-a11y-bus
     daemon: dbus
     daemon-scope: user
+    # D8 (T17/T18): without this, the default refresh behaviour stops
+    # the user daemon in every active user manager mid-session; the
+    # launcher and private dbus-daemon die, every app's bridge
+    # connection dies with them, and atk-bridge does not retry (the new
+    # revision only activates on the next GetAddress, which running
+    # apps never send again). endure keeps the OLD daemon process
+    # running through the refresh (old mount namespace = old code) so
+    # the session's bus and its clients survive. What it does NOT
+    # cover: the new revision is not served until the daemon next
+    # restarts (logout/reboot/manual), and a REVERT has the same shape.
+    # T11 gate 6 (refresh/revert while Orca is enabled) still to run.
+    refresh-mode: endure
     activates-on:
       - dbus-a11y
     slots:
@@ -182,6 +194,9 @@ apps:
     daemon: simple
     daemon-scope: user
     restart-condition: on-failure
+    # D8: same rationale as the bus app - a mid-session refresh must
+    # not stop the speech daemon out from under a running reader.
+    refresh-mode: endure
     sockets:
       # renderListenStream() rewrites $XDG_RUNTIME_DIR for user daemons
       # to %t/snap.<snapname> (wrappers/internal/service_socket_gen.go:53),
