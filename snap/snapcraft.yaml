@@ -96,6 +96,17 @@ layout:
   # dir; the daemon logged "Exec of module ... failed with error 2").
   /usr/lib/speech-dispatcher-modules:
     bind: $SNAP/usr/lib/speech-dispatcher-modules
+  # T20 E3 follow-up: the espeak output module (and the pulse audio
+  # plugin the server dlopens) need libpulsecommon-17.0.so, staged
+  # under $SNAP/usr/lib/<triplet>/pulseaudio/. Neither the module's
+  # absolute RPATH nor LD_LIBRARY_PATH reached that subdir in-ns
+  # (verbatim ldd in the x13 namespace: "libpulsecommon-17.0.so =>
+  # not found"), so sd_espeak-ng died at loader stage and speechd fell
+  # back to dummy - the wrong-module half of the E3 crash. Bind the
+  # staged dir at its absolute deb path (conflict-free: core26 ships
+  # no pulseaudio at all) so the deb's own RPATH resolves.
+  /usr/lib/$CRAFT_ARCH_TRIPLET_BUILD_FOR/pulseaudio:
+    bind: $SNAP/usr/lib/$CRAFT_ARCH_TRIPLET_BUILD_FOR/pulseaudio
 
 environment:
   # pipewire-snap env/LD_LIBRARY_PATH precedent; host paths first so

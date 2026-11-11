@@ -39,6 +39,11 @@ export PULSE_SERVER="unix:${real_rt}/snap.pipewire/pulse/native"
 # a second safety net.
 if [ -n "$TRIPLET" ]; then
     export ESPEAK_DATA_PATH="$SNAP/usr/lib/$TRIPLET"
+    # T20 E3 follow-up: libpulsecommon-17.0.so (needed by the espeak
+    # module and the pulse audio plugin) is staged in the pulseaudio/
+    # subdir, which no loader path covered; the layout bind fixes the
+    # RPATH route, this covers any env-only resolution.
+    export LD_LIBRARY_PATH="${LD_LIBRARY_PATH:+$LD_LIBRARY_PATH:}$SNAP/usr/lib/$TRIPLET/pulseaudio"
 fi
 
 exec "$SNAP/usr/bin/speech-dispatcher" -s -t 0
