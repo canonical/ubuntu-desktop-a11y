@@ -11,6 +11,15 @@
 # Debian dist-packages tree.
 export PYTHONPATH="$SNAP/usr/lib/python3/dist-packages${PYTHONPATH:+:$PYTHONPATH}"
 
+# Multiarch triplet detection, mirroring run-speech-dispatcher. The snap
+# is single-platform per build (build-for == runtime arch), so uname -m
+# is authoritative at runtime.
+case "$(uname -m)" in
+    x86_64)  TRIPLET=x86_64-linux-gnu ;;
+    aarch64) TRIPLET=aarch64-linux-gnu ;;
+    *)       TRIPLET="" ;;
+esac
+
 # glib schemas (org.gnome.Orca + org.gnome.desktop.a11y.*) are compiled
 # into $SNAP/usr/share/glib-2.0/schemas by the a11y-stack part; glib
 # looks in $XDG_DATA_DIRS/glib-2.0/schemas.
@@ -25,7 +34,13 @@ export XDG_DATA_DIRS="$SNAP/usr/share${XDG_DATA_DIRS:+:$XDG_DATA_DIRS}"
 # session's. The snap stages gir1.2-atspi-2.0 et al into
 # $SNAP/usr/lib/<triplet>/girepository-1.0; the session env is dropped
 # entirely so the denied content-snap paths are never searched.
-export GI_TYPELIB_PATH="$SNAP/usr/lib/x86_64-linux-gnu/girepository-1.0"
+if [ -n "$TRIPLET" ]; then
+    export GI_TYPELIB_PATH="$SNAP/usr/lib/$TRIPLET/girepository-1.0"
+else
+    # Unknown triplet: still drop the session's pointer (denied paths),
+    # even though typelib discovery will fail without a staged tree.
+    unset GI_TYPELIB_PATH
+fi
 
 # speech-dispatcher runs as a snapd socket-activated user daemon of the
 # SAME snap: its socket lands in this snap's private runtime dir, which
