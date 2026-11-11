@@ -150,6 +150,16 @@ plugs:
   wayland-client:
     interface: wayland
 
+  # T30 item 1 (T29 C4): the READER role. The plug carries the
+  # accessibility-provider interface's connected-plug snippet (the
+  # complete reader send-set, see the interface). The local plug name
+  # must differ from the slot name (snapd forbids a plug and a slot
+  # with the same name in one snap - the first clean-bake seed failed
+  # on exactly that), so this is "reader" plugged by the orca app;
+  # same-snap implicit connection to the bus app's slot.
+  reader:
+    interface: accessibility-provider
+
 slots:
   dbus-a11y:
     interface: dbus
@@ -240,17 +250,18 @@ apps:
       # x11 slot on this image) - wire it at image assembly like the
       # dbus/wayland edges; manual `snap connect` on dev images.
       - x11
-      # T30 item 1 (T29 C4): the READER role - the plug side of the
-      # accessibility-provider interface carries the complete reader
-      # send-set derived once from at-spi2-core's interface XML (Text,
-      # EditableText, Action, Component, Selection, Hypertext/Hyperlink,
-      # Document, Table/TableCell, Cache, Value via Properties.Set, and
-      # the Registry/DeviceEventController registration + synthetic-
-      # input sends), instead of chasing interface-by-interface denials.
-      # Same-snap implicit connection to the bus app's slot; the base
-      # declaration keeps the plug install-gated + manual-connect for
-      # any other snap.
-      - accessibility-provider
+      # T30 item 1 (T29 C4): the READER role - the "reader" plug (the
+      # accessibility-provider interface's connected-plug snippet)
+      # carries the complete reader send-set derived once from
+      # at-spi2-core's interface XML (Text, EditableText, Action,
+      # Component, Selection, Hypertext/Hyperlink, Document, Table/
+      # TableCell, Cache, Value via Properties.Set, and the Registry/
+      # DeviceEventController registration + synthetic-input sends),
+      # instead of chasing interface-by-interface denials. Same-snap
+      # implicit connection to the bus app's slot; the base declaration
+      # keeps the plug install-gated + manual-connect for any other
+      # snap.
+      - reader
 
   speech-dispatcher:
     command: bin/run-speech-dispatcher
