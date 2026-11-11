@@ -1,0 +1,5 @@
+# Packed snap artifacts are build outputs, not source (T17 I4). The
+# pre-convention committed binaries (~75 MB each, re-committed per
+# artifact refresh, x5-x12) stay in history; history rewrite is NOT
+# wanted (shared spike line).
+*.snap
