@@ -1,6 +1,6 @@
 name: ubuntu-desktop-a11y
 base: core26
-version: "0.1"
+version: "0.1+git20261110"
 summary: Accessibility provider snap (AT-SPI bus, Orca, speech-dispatcher)
 description: |
   Spike 1 of the thin-line accessibility work: one strictly confined
@@ -26,6 +26,9 @@ description: |
   specific (T10) and does not apply here. This snap is meant to be
   image-seeded with its connections established before the session
   starts (T11 review section 6).
+# grade stays "devel" until the T11 gates pass (gates 2-8; gate 1 is
+# the only one run, on the fat VM - T19); flip to stable together with
+# the store-facing pass, not before.
 grade: devel
 confinement: strict
 license: GPL-2.0-or-later AND LGPL-2.1-or-later AND BSD-3-Clause
@@ -295,14 +298,6 @@ parts:
       # T16 finding: xkbcommon needs the XKB data (rules/evdev); the base
       # ships none and the layout above binds it to the compiled-in path.
       - xkb-data
-    override-prime: |
-      craftctl default
-      echo "=== T16-DEBUG prime X11 tree:"
-      ls -la "$CRAFT_PRIME/usr/share/X11/" 2>&1 | head -8
-      ls "$CRAFT_PRIME/usr/share/X11/xkb/" 2>&1 | head -8
-      echo "=== T16-DEBUG install X11 tree:"
-      ls -la "$CRAFT_PART_INSTALL/../install/usr/share/X11/" 2>&1 | head -8 || true
-      find /root/parts/a11y-stack/install/usr/share/X11 -maxdepth 1 2>/dev/null | head -8
     override-build: |
       craftctl default
       # orca's prefs schema (org.gnome.Orca) and the session a11y
