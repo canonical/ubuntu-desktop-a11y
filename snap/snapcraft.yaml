@@ -397,6 +397,14 @@ parts:
       # T16 finding: xkbcommon needs the XKB data (rules/evdev); the base
       # ships none and the layout above binds it to the compiled-in path.
       - xkb-data
+      # T23 (first user-session run on thin): orca spawns xkbcomp while
+      # setting up its keyboard grab; the user-session manager env has
+      # no PATH reaching a host xkbcomp (the confined session snap's
+      # environment broker PATH covers snap bins only), so the spawn
+      # died with FileNotFoundError and the reader failed to start
+      # exactly where the greeter (content-runtime env) worked. Stage
+      # the tool; run-orca puts $SNAP/usr/bin on PATH.
+      - x11-xkb-utils
     override-build: |
       craftctl default
       # T23: the modified NSS chain, generated INTO the part's install
@@ -455,12 +463,6 @@ parts:
       # first sem_wait() on it SIGSEGVs the module (verbatim trace:
       # openat("/dev/shm/sem.mP6OEw", O_RDWR|O_CREAT|O_EXCL) = -1
       # EACCES -> SIGSEGV -> server restart loop -> start-limit). The
-      # denial is on the GLIBC TEMP name, so no speechd-side rename of
-      # the semaphore can fix it and a template-wide /dev/shm/sem.*
-      # mknod grant stays rejected (shared /dev/shm). The in-snap fix
-      # is to not stage the sem_open-using binaries at all: their load
-      # requests then fail gracefully (load_output_module returns NULL
-      # and is skipped), espeak-ng (no sem_open) remains, and the
       # DefaultModule override above selects it. sd_espeak-ng-mbrola is
       # a sd_generic-family module needing mbrola voices (not staged).
       - -usr/lib/speech-dispatcher-modules/sd_dummy

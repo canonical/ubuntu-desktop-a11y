@@ -51,4 +51,14 @@ fi
 # communication method in address".
 export SPEECHD_ADDRESS="unix_socket:${XDG_RUNTIME_DIR}/speech-dispatcher/speechd.sock"
 
+# T23 (first user-session run on thin): orca spawns xkbcomp while
+# setting up its keyboard grab, and the user-session manager env (the
+# confined session snap's environment broker output) carries no PATH
+# entry that resolves it — FileNotFoundError: 'xkbcomp'. The greeter
+# worked by accident: gdm's content-runtime session env has a PATH that
+# reaches the host's xkbcomp. The snap stages x11-xkb-utils (see
+# snapcraft.yaml); point PATH at the snap's own bin dir so the spawn
+# resolves identically in every session placement.
+export PATH="$SNAP/usr/bin:$SNAP/bin${PATH:+:$PATH}"
+
 exec "$SNAP/usr/bin/python3" "$SNAP/usr/bin/orca" --replace "$@"
