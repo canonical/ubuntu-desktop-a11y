@@ -1,6 +1,6 @@
 name: ubuntu-desktop-a11y
 base: core26
-version: "0.1+git20261110"
+version: "0.1+git20261111"
 summary: Accessibility provider snap (AT-SPI bus, Orca, speech-dispatcher)
 description: |
   Spike 1 of the thin-line accessibility work: one strictly confined
@@ -221,6 +221,25 @@ apps:
       # session snap's wayland slot is the client grant; connect at
       # image assembly like the dbus edges.
       - wayland-client
+      # T26 gap (a) (T25 gate-4 AVC, verbatim): in the WIZARD session
+      # the orca profile was denied the X11 display connect -
+      #   apparmor="DENIED" operation="connect" class="net"
+      #   profile="snap.ubuntu-desktop-a11y.orca" ...
+      #   peer_addr="@/tmp/.X11-unix/X1024" peer="unconfined"
+      #   requested="send receive connect" denied="send connect"
+      # gdm's wizard Xwayland (display :1024) listens on the
+      # conventional filesystem socket AND the abstract @/tmp/.X11-
+      # unix/X1024 address; GDK tries the abstract transport first, the
+      # profile had no abstract-addr rule, the display came up None and
+      # orca crashed at keymap init (AttributeError 'NoneType' ...
+      # get_entries_for_keyval, x5 into the start limit). The x11 plug
+      # carries exactly that grant (interfaces/builtin/x11.go:
+      # addr="@/tmp/.X11-unix/X[0-9]*" send/receive/connect plus the
+      # /tmp/.X11-unix bind layout). Connect edge: ubuntu-desktop-a11y:
+      # x11 <-> ubuntu-desktop-session:x11 (the session snap owns the
+      # x11 slot on this image) - wire it at image assembly like the
+      # dbus/wayland edges; manual `snap connect` on dev images.
+      - x11
 
   speech-dispatcher:
     command: bin/run-speech-dispatcher
