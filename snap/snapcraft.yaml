@@ -242,6 +242,17 @@ parts:
       # Registry", no peer_label). snapd's own generated activation
       # files carry the same field (T13 §1b).
       printf 'AssumedAppArmorLabel=snap.ubuntu-desktop-a11y.bus\n' >> "$CRAFT_STAGE/usr/share/dbus-1/accessibility-services/org.a11y.atspi.Registry.service"
+      # E3 (T20 strace finding): the deb's speechd.conf ships every
+      # AddModule line AND DefaultModule commented out, so speechd
+      # auto-detects whatever binaries sit in the module dir and falls
+      # back to "first loaded" for the default output module - in this
+      # snap that made dummy (or mbrola) the speaking module = silence
+      # even with working audio. Enable the espeak-ng module and make
+      # it the explicit default; the modules this snap actually
+      # supports are selected in the stage: filter below.
+      sed -i \
+        's|^#AddModule "espeak-ng"\(.*\)$|AddModule "espeak-ng"\1|; s|^# DefaultModule espeak-ng$|DefaultModule espeak-ng|' \
+        "$CRAFT_STAGE/etc/speech-dispatcher/speechd.conf"
     stage-packages:
       # --- bus payload (at-spi2-core ships at-spi-bus-launcher,
       # at-spi2-registryd, accessibility.conf and the
@@ -325,3 +336,27 @@ parts:
       - -usr/share/doc
       - -usr/share/man
       - -usr/share/lintian
+      # E3 (T20 strace finding): speechd's server unconditionally
+      # load-requests the dummy and espeak-ng-fallback modules as
+      # last-resort output modules (speechd.c ~818-835), and
+      # auto-detects whatever else is in the module dir. The dummy and
+      # generic module families create a POSIX semaphore in
+      # module_init via glibc sem_open(), which ALWAYS creates
+      # /dev/shm/sem.XXXXXX (mktemp) before link()ing the final name -
+      # the strict template's snap-scoped /dev/shm grant can never
+      # match the random temp name, sem_open returns SEM_FAILED, the
+      # return value is UNCHECKED (dummy.c:77, generic.c:194) and the
+      # first sem_wait() on it SIGSEGVs the module (verbatim trace:
+      # openat("/dev/shm/sem.mP6OEw", O_RDWR|O_CREAT|O_EXCL) = -1
+      # EACCES -> SIGSEGV -> server restart loop -> start-limit). The
+      # denial is on the GLIBC TEMP name, so no speechd-side rename of
+      # the semaphore can fix it and a template-wide /dev/shm/sem.*
+      # mknod grant stays rejected (shared /dev/shm). The in-snap fix
+      # is to not stage the sem_open-using binaries at all: their load
+      # requests then fail gracefully (load_output_module returns NULL
+      # and is skipped), espeak-ng (no sem_open) remains, and the
+      # DefaultModule override above selects it. sd_espeak-ng-mbrola is
+      # a sd_generic-family module needing mbrola voices (not staged).
+      - -usr/lib/speech-dispatcher-modules/sd_dummy
+      - -usr/lib/speech-dispatcher-modules/sd_generic
+      - -usr/lib/speech-dispatcher-modules/sd_espeak-ng-mbrola
