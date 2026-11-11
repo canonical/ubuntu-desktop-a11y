@@ -91,6 +91,17 @@ layout:
   # staged config there (conflict-free: the base lacks the path).
   /etc/speech-dispatcher:
     bind: $SNAP/etc/speech-dispatcher
+  # T23 follow-up to the staged nsswitch chain (see the a11y-stack
+  # override-stage): core26 ships /etc/nsswitch.conf, so the modified
+  # file cannot be staged at that path (snapcraft prime excludes base
+  # content); bind-file the staged copy over the base's file inside this
+  # snap's namespace. /etc is not on snapd's layout rejection list and
+  # bind-file over an existing base file is the supported replacement
+  # shape (snapd snap/validate.go: only the off-limits list + $SNAP
+  # source rules; a symlink layout is the one that cannot replace an
+  # existing file - snap-update-ns change.go:187).
+  /etc/nsswitch.conf:
+    bind-file: $SNAP/etc/a11y-nsswitch.conf
   # T13 runtime finding #2: the output modules are exec'd from the
   # compiled-in /usr/lib/speech-dispatcher-modules/ (base lacks the
   # dir; the daemon logged "Exec of module ... failed with error 2").
@@ -275,6 +286,36 @@ parts:
       sed -i \
         's|^#AddModule "espeak-ng"\(.*\)$|AddModule "espeak-ng"\1|; s|^# DefaultModule espeak-ng$|DefaultModule espeak-ng|' \
         "$CRAFT_STAGE/etc/speech-dispatcher/speechd.conf"
+      # T23 (first thin image with this snap baked): core26's stock
+      # /etc/nsswitch.conf is "files extrausers" only, so a systemd
+      # TRANSIENT uid is unresolvable inside this snap's mount
+      # namespace. Every Ubuntu Core Desktop session user is such a uid
+      # before the wizard creates a real account (the first-boot wizard
+      # runs as gnome-initial-setup, uid 60578-transient; D7's
+      # file-backed gdm uid 200 and T14's extrausers users keep
+      # resolving through "files"/"extrausers"). The confined private
+      # dbus-daemon needs its own uid's password record when a peer
+      # connects, so it silently DROPPED every peer - verbatim journal:
+      #   dbus-daemon[19313]: Could not get password database
+      #     information for UID of current process: Looking up user ID
+      #     60578: not found
+      # with clients seeing NoReply/ENOTCONN (the T13 drop shape, via
+      # the daemon's own-uid lookup rather than the peer's). Add
+      # "systemd" to the chain: libnss_systemd resolves transient uids
+      # from /run/systemd/users/<uid>, which is the HOST's /run shared
+      # into this snap's namespace (the launcher already binds the bus
+      # socket there, T19 D2) and granted read by the strict template
+      # (template.go: /run/systemd/users/[0-9]* r). Content is core26
+      # rev 750's stock file with the three user lines extended.
+      # NOTE: the file must NOT be staged at /etc/nsswitch.conf itself -
+      # snapcraft excludes prime files the base already ships, so the
+      # staged copy would silently vanish (observed in the first T23
+      # build: libnss_systemd staged, nsswitch.conf gone from the pack).
+      # It is staged beside the base's file and bind-file'd over it via
+      # the layout below (bind-file over an existing base file is the
+      # supported shape; a symlink layout is not - snap-update-ns
+      # change.go:187 "existing file in the way"). The file itself is
+      # generated in override-build (part-owned content; see above).
     stage-packages:
       # --- bus payload (at-spi2-core ships at-spi-bus-launcher,
       # at-spi2-registryd, accessibility.conf and the
@@ -294,8 +335,18 @@ parts:
       # group}, visible in-ns and granted r by the strict AppArmor template
       # (template.go: /etc/nsswitch.conf r, /var/lib/extrausers/{passwd,
       # group} r). Dynamic (userdbd-only) uids remain unresolvable in-ns
-      # by any file-backed module - see T14 deliverable.
+      # by any file-backed module - see T14 deliverable. T23 closes that
+      # gap for the thin line: userdbd does not ship there, so the
+      # "systemd" NSS source (libnss-systemd, staged below) is what
+      # resolves the wizard's transient uid from the host's
+      # /run/systemd/users/<uid> drop-in record.
       - libnss-extrausers
+      # T23: resolves systemd transient uids (gnome-initial-setup) via
+      # /run/systemd/users/<uid>; see the nsswitch.conf staged in
+      # override-stage. core26 does not ship libnss_systemd (verified:
+      # absent from the daemon's namespace on the thin image), so the
+      # snap must stage it. Small deb; Depends on libc6 only.
+      - libnss-systemd
       # --- orca + python/gi stack. T4's proven 26.04 set, minus
       # brltty/xbrlapi: braille hardware is a separate privilege domain
       # (T11 review section 2); orca's runtime imports DO include
@@ -348,6 +399,39 @@ parts:
       - xkb-data
     override-build: |
       craftctl default
+      # T23: the modified NSS chain, generated INTO the part's install
+      # dir. It must NOT be written in override-stage: snapcraft's prime
+      # step zeroes files in the shared stage tree that no part owns
+      # (observed twice in T23: a 488-byte stage file packed as a
+      # 0-byte prime file); files in $CRAFT_PART_INSTALL are part-owned
+      # content and flow to prime intact. See the layout above for why
+      # this lands at etc/a11y-nsswitch.conf rather than the base's
+      # etc/nsswitch.conf path.
+      install -d -m 0755 "$CRAFT_PART_INSTALL/etc"
+      printf '%s\n' \
+        '# /etc/nsswitch.conf (ubuntu-desktop-a11y: core26 stock +' \
+        '# "systemd" on the user lines - see the a11y-stack' \
+        '# override-build comment, T23)' \
+        'passwd:         files extrausers systemd' \
+        'group:          files extrausers systemd' \
+        'shadow:         files extrausers systemd' \
+        'gshadow:        files' \
+        '' \
+        'hosts:          files mdns4_minimal [NOTFOUND=return] dns' \
+        'networks:       files' \
+        '' \
+        'protocols:      db files' \
+        'services:       db files' \
+        'ethers:         db files' \
+        'rpc:            db files' \
+        '' \
+        'netgroup:       nis' \
+        > "$CRAFT_PART_INSTALL/etc/a11y-nsswitch.conf"
+      # Fail the build if the staged chain is not what the daemon needs.
+      grep -q '^passwd:.* files extrausers systemd$' \
+        "$CRAFT_PART_INSTALL/etc/a11y-nsswitch.conf"
+      grep -q '^shadow:.* files extrausers systemd$' \
+        "$CRAFT_PART_INSTALL/etc/a11y-nsswitch.conf"
       # orca's prefs schema (org.gnome.Orca) and the session a11y
       # schemas (org.gnome.desktop.a11y.* via gsettings-desktop-schemas)
       # must be compiled for GSettings users inside the snap; glib
