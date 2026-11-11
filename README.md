@@ -88,6 +88,14 @@ the launcher actually did at runtime.
 5. Where does the launcher actually place the socket, and what does the
    session-bus-side client policy need for external (other-snap)
    readers?
+6. (T20/I4) `PULSE_SERVER` hard-codes the pipewire slot's instance name
+   (`snap.pipewire`) in `bin/run-speech-dispatcher`. The audio-playback
+   connected-plug grant is parameterized with the slot snap's instance
+   name (`audio_playback.go:182`), but snapd exposes no env/metadata
+   carrying it to the plug side, and libpulse's default discovery path
+   is exactly what confinement breaks. Needs a snapd mechanism (e.g. an
+   interface-exported env var naming the slot instance) before this
+   snap can tolerate a renamed/sideloaded pipewire instance.
 
 ## Not in scope (post-spike, per T11)
 

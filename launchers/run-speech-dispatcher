@@ -20,6 +20,17 @@ esac
 # is the snap-PRIVATE runtime dir, so recover the real per-UID dir by
 # stripping the snap.<name> suffix - this is the fat line's
 # PULSE_SERVER fix, with the absolute Core socket path.
+#
+# Why the slot-snap instance name is hard-coded: the connected-plug
+# AppArmor grant is parameterized with the SLOT snap's instance name at
+# profile generation, but snapd exposes no env/metadata for it to the
+# plug side (SNAP_* variables are all self-referential), and nothing
+# else identifies the pulse server socket. libpulse's own discovery
+# ($XDG_RUNTIME_DIR/pulse/native) is exactly the path confinement
+# breaks. If the slot snap is ever renamed/sideloaded under a different
+# instance name, this path breaks loudly (connection refused -> speechd
+# audio init fails). SEE README "Spike questions" #6: needs a snapd
+# mechanism (e.g. an interface-provided env var) to be robust.
 real_rt="${XDG_RUNTIME_DIR%/snap.*}"
 export PULSE_SERVER="unix:${real_rt}/snap.pipewire/pulse/native"
 
