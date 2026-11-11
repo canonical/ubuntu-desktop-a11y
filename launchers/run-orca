@@ -42,6 +42,27 @@ else
     unset GI_TYPELIB_PATH
 fi
 
+# T28 (NEW-4): the GREETER's user manager env carries gdm's seat-scoped
+# XDG_CONFIG_HOME (/var/lib/gdm3/seat0/config) and GSETTINGS_SCHEMA_DIR
+# (content-snap path). Inside the snap mount namespace /var/lib/gdm3
+# does not exist at all (gdm's fstab bind is not replicated into snap
+# namespaces), so glib's keyfile settings backend fails at init with
+# "Failed to create /var/lib/gdm3/seat0/config/glib-2.0/settings:
+# Read-only file system" on every reader start (non-fatal on clean
+# bits — the T27 SEGV downstream of it was the overlay artifact — but
+# it fires for every confined greeter daemon and never persists).
+# GSETTINGS_SCHEMA_DIR is denied under this label (the T14 class).
+# Point the config home at the snap's own per-user data dir (guaranteed
+# writable, ephemeral with the greeter home) and drop the denied
+# schema pointer; the snap's own schemas resolve via XDG_DATA_DIRS.
+# GDK_PIXBUF_MODULE_FILE is the same class: the greeter env points it
+# at the content snap's loaders.cache, denied under this label (one
+# open denial per reader start).
+export XDG_CONFIG_HOME="${SNAP_USER_DATA}/.config"
+mkdir -p "$XDG_CONFIG_HOME" 2>/dev/null
+unset GSETTINGS_SCHEMA_DIR
+unset GDK_PIXBUF_MODULE_FILE
+
 # speech-dispatcher runs as a snapd socket-activated user daemon of the
 # SAME snap: its socket lands in this snap's private runtime dir, which
 # is exactly what $XDG_RUNTIME_DIR points at inside the snap. T13
