@@ -107,6 +107,17 @@ layout:
   # no pulseaudio at all) so the deb's own RPATH resolves.
   /usr/lib/$CRAFT_ARCH_TRIPLET_BUILD_FOR/pulseaudio:
     bind: $SNAP/usr/lib/$CRAFT_ARCH_TRIPLET_BUILD_FOR/pulseaudio
+  # T20 E3 follow-up #2: the espeak module's server-side audio opens
+  # the pulse plugin at the absolute /usr/lib/<triplet>/speech-
+  # dispatcher/spd_pulse.so (verbatim speechd log: "Opening audio
+  # failed: Cannot open plugin pulse in /usr/lib/x86_64-linux-gnu/
+  # speech-dispatcher/spd_pulse. error: file not found"). The plugins
+  # are staged (speech-dispatcher-audio-plugins) but that dir has no
+  # layout; on the fat test image the host's plugin dir (alsa/libao/
+  # oss only - no pulse) shadows nothing, on a thin base the dir does
+  # not exist at all. Bind the staged dir over the absolute path.
+  /usr/lib/$CRAFT_ARCH_TRIPLET_BUILD_FOR/speech-dispatcher:
+    bind: $SNAP/usr/lib/$CRAFT_ARCH_TRIPLET_BUILD_FOR/speech-dispatcher
 
 environment:
   # pipewire-snap env/LD_LIBRARY_PATH precedent; host paths first so
