@@ -240,6 +240,17 @@ apps:
       # x11 slot on this image) - wire it at image assembly like the
       # dbus/wayland edges; manual `snap connect` on dev images.
       - x11
+      # T30 item 1 (T29 C4): the READER role - the plug side of the
+      # accessibility-provider interface carries the complete reader
+      # send-set derived once from at-spi2-core's interface XML (Text,
+      # EditableText, Action, Component, Selection, Hypertext/Hyperlink,
+      # Document, Table/TableCell, Cache, Value via Properties.Set, and
+      # the Registry/DeviceEventController registration + synthetic-
+      # input sends), instead of chasing interface-by-interface denials.
+      # Same-snap implicit connection to the bus app's slot; the base
+      # declaration keeps the plug install-gated + manual-connect for
+      # any other snap.
+      - accessibility-provider
 
   speech-dispatcher:
     command: bin/run-speech-dispatcher
@@ -464,6 +475,21 @@ parts:
       # must be compiled for GSettings users inside the snap; glib
       # resolves schemas from $XDG_DATA_DIRS/glib-2.0/schemas and the
       # orca wrapper points XDG_DATA_DIRS at $SNAP/usr/share.
+      # T30 item 6 (T29 C7): suppress (never grant) orca's periodic
+      # inet socket attempts. The staged orca ships braille support
+      # whose BrlAPI client retries a brltty connection forever with
+      # the retry delay capped at one attempt per minute
+      # (braille.py _BRLAPI_RETRY_MAX_DELAY_MS = 60000; the transient
+      # connect worker thread resolves "localhost" into one inet plus
+      # one inet6 TCP socket create per attempt - the ~232 denials/boot
+      # under the orca profile, "failed af match" family=inet). This
+      # snap ships no brltty daemon and braille hardware is a separate
+      # privilege domain (T11 §2), so a BrlAPI server is unreachable
+      # here by design: flip the compiled-in schema default instead of
+      # granting network. A user db value can still re-enable braille
+      # per session; with the reader off no socket is attempted at all.
+      printf '%s\n' '[org.gnome.Orca.Braille]' 'enabled=false' \
+        > "$CRAFT_PART_INSTALL/usr/share/glib-2.0/schemas/50-ucd-snap-braille-off.gschema.override"
       glib-compile-schemas "$CRAFT_PART_INSTALL/usr/share/glib-2.0/schemas"
     stage:
       - -usr/share/doc
