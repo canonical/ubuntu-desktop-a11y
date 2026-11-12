@@ -59,6 +59,21 @@ fi
 # at the content snap's loaders.cache, denied under this label (one
 # open denial per reader start).
 export XDG_CONFIG_HOME="${SNAP_USER_DATA}/.config"
+
+# T30 item 6 (T29 C7): suppress orca's periodic inet socket attempts
+# WITHOUT granting network. orca's braille support retries a BrlAPI
+# (brltty) connection forever; with the default connection settings the
+# retry resolves "localhost" and attempts one inet plus one inet6 TCP
+# connect per cycle (~2 denials/minute under this profile, ~232/boot).
+# This snap ships no brltty daemon and braille hardware is a separate
+# privilege domain (T11 §2), so point BrlAPI at a snap-owned UNIX
+# socket path instead: the connect fails with ENOENT inside a directory
+# this profile already owns, no host resolution happens and no
+# network-shaped socket is ever attempted. (The compiled
+# org.gnome.Orca.Braille enabled=false default does not bite because
+# orca's braille state initialises to True and only syncs the setting
+# on change - braille.py _STATE dataclass default.)
+export BRLAPI_HOST="${SNAP_USER_DATA}/.config/brlapi.sock"
 mkdir -p "$XDG_CONFIG_HOME" 2>/dev/null
 unset GSETTINGS_SCHEMA_DIR
 unset GDK_PIXBUF_MODULE_FILE
