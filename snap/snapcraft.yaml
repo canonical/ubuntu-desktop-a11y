@@ -1,6 +1,6 @@
 name: ubuntu-desktop-a11y
 base: core26
-version: "0.1+git20261111"
+version: "0.1+git20261116"
 summary: Accessibility provider snap (AT-SPI bus, Orca, speech-dispatcher)
 description: |
   Spike 1 of the thin-line accessibility work: one strictly confined
@@ -26,10 +26,15 @@ description: |
   specific (T10) and does not apply here. This snap is meant to be
   image-seeded with its connections established before the session
   starts (T11 review section 6).
-# grade stays "devel" until the T11 gates pass (gates 2-8; gate 1 is
-# the only one run, on the fat VM - T19); flip to stable together with
-# the store-facing pass, not before.
-grade: devel
+# grade flipped to "stable" at the start of the shipping phase (T29
+# C13 release hygiene, T40): T11 gates 1-8 ALL pass on the thin line
+# as of 2026-11-16 (gate 8 = the owner's live human session). The
+# gate-2 STORE re-test with real store egress is still on the
+# follow-up list (T25 ran it network-blocked, calculator sideloaded),
+# but grade=stable is a hard requirement for any store upload (devel
+# snaps cannot promote), so it ships flipped. The 0.1+git<date>
+# version scheme is likewise a store-rename decision for the owner.
+grade: stable
 confinement: strict
 license: GPL-2.0-or-later AND LGPL-2.1-or-later AND BSD-3-Clause
 
