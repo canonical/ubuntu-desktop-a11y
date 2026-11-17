@@ -130,13 +130,26 @@ def spawn_server(sock_path, use_fds):
 
 
 def probe(timeout, sock_path):
-    """Connect + greeting read. Returns (ok, detail, elapsed)."""
+    """Connect + SSIP liveness round-trip. Returns (ok, detail, elapsed).
+
+    speech-dispatcher is a CLIENT-SPEAKS-FIRST protocol: the server
+    sends NO greeting on connect (verified live on the T47 VM - an
+    idle connect gets a silent close), so the probe sends a harmless
+    per-connection SSIP command (SET SELF CLIENT_NAME - scoped to
+    THIS connection, no synthesis, no global state) and expects any
+    complete reply line (2xx/4xx/5xx). Only the server's main loop
+    reads commands and replies: a hung main loop (the T41/T44 wedge)
+    never replies. connect() alone is NOT enough to detect a hang -
+    the listening fd lives in the unit (and in this process), so the
+    KERNEL completes new connections into the backlog even when the
+    server is wedged."""
     t0 = time.monotonic()
     s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
     try:
         s.settimeout(timeout)
         s.connect(sock_path)  # kernel-level: succeeds even vs a hung server
-        # Read the greeting in TICK slices so a stop request is honored
+        s.sendall(b"SET SELF CLIENT_NAME speechd-supervisor:probe:probe\r\n")
+        # Read the reply in TICK slices so a stop request is honored
         # promptly and the deadline is exact (PEP 475 would resume a
         # plain timed recv through the handler run).
         deadline = time.monotonic() + timeout
@@ -147,12 +160,17 @@ def probe(timeout, sock_path):
             if r:
                 chunk = s.recv(256)
                 if chunk:
-                    # Any greeting bytes = the server main loop is alive.
+                    # Any reply line = the server main loop is alive.
                     return True, chunk[:64], time.monotonic() - t0
-                return False, "EOF (server closed without greeting)", \
+                return False, "EOF (server closed on a valid command)", \
                     time.monotonic() - t0
-        return False, "no greeting within %.1fs" % timeout, \
+        return False, "no reply within %.1fs" % timeout, \
             time.monotonic() - t0
+    except ConnectionRefusedError:
+        return False, "ECONNREFUSED (no listener at the path)", \
+            time.monotonic() - t0
+    except FileNotFoundError:
+        return False, "ENOENT (socket path missing)", time.monotonic() - t0
     except OSError as exc:
         return False, "%s" % exc, time.monotonic() - t0
     finally:
@@ -168,6 +186,7 @@ class Supervisor:
         self.use_fds = use_fds
         self.child = None
         self.stopping = False
+        self.fatal = False
         self.greeted_ever = False
         self.consecutive_kills = 0
         self.spawn_backoff = 0.0
@@ -242,13 +261,29 @@ class Supervisor:
         ok, detail, elapsed = probe(timeout, self.sock_path)
         if ok:
             if not self.greeted_ever:
-                log("first greeting after spawn in %.2fs: %r"
+                log("first reply after spawn in %.2fs: %r"
                     % (elapsed, detail))
                 self.greeted_ever = True
             self.consecutive_kills = 0
             self.spawn_backoff = 0.0
             return True
         log("probe FAILED (%s): %s after %.2fs" % (label, detail, elapsed))
+        if self.use_fds and \
+                ("ECONNREFUSED" in detail or "ENOENT" in detail):
+            # FD-MODE + the path is unreachable: a listener exists
+            # (this process holds its fd) but the PATH file no longer
+            # points at it (observed live on the T47 VM: a self-bound
+            # server instance replaced the socket file while the unit's
+            # listener stayed orphaned behind it). Killing children
+            # CANNOT fix this - only a socket-unit restart re-binds the
+            # path - and speech is already broken for every new client.
+            # Exit loudly so the unit shows failed instead of silently
+            # kill-looping healthy servers.
+            log("FATAL: the socket path is orphaned from the unit's "
+                "listener (%s) - a socket-unit restart is needed to "
+                "re-bind it; exiting so the failure is visible" % detail)
+            self.fatal = True
+            return False
         self.kill(label)
         return False
 
@@ -257,7 +292,7 @@ class Supervisor:
             "probe_timeout=%.0fs startup_timeout=%.0fs"
             % (self.sock_path, SERVER, PROBE_INTERVAL, PROBE_TIMEOUT,
                STARTUP_TIMEOUT))
-        while not self.stopping:
+        while not self.stopping and not self.fatal:
             if self.child is None:
                 # (Re)spawn: exponential backoff for exiting children;
                 # a widened cadence once kills repeat without ANY greeting.
@@ -292,6 +327,7 @@ class Supervisor:
                 continue
             self.cycle(PROBE_TIMEOUT, "hang")
         self.wait_stopped_child()
+        return 1 if self.fatal else 0
 
 
 def main():
@@ -329,10 +365,8 @@ def main():
         log("WARNING: running WITHOUT the socket-activation fd "
             "(LISTEN_FDS=%r) - the server will bind %s itself; check "
             "the speechd-socket.socket unit" % (n_fds, sock_path))
-        Supervisor(sock_path, use_fds=False).run()
-        return 0
-    Supervisor(sock_path).run()
-    return 0
+        return Supervisor(sock_path, use_fds=False).run()
+    return Supervisor(sock_path).run()
 
 
 if __name__ == "__main__":
