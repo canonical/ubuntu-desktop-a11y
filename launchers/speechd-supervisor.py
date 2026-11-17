@@ -186,7 +186,6 @@ class Supervisor:
         self.use_fds = use_fds
         self.child = None
         self.stopping = False
-        self.fatal = False
         self.greeted_ever = False
         self.consecutive_kills = 0
         self.spawn_backoff = 0.0
@@ -257,8 +256,29 @@ class Supervisor:
         log("stopped cleanly (server pid=%d reaped)" % pid)
 
     def cycle(self, timeout, label):
-        """One probe against the current child. Returns success."""
-        ok, detail, elapsed = probe(timeout, self.sock_path)
+        """One probe against the current child. Returns success.
+
+        ECONNREFUSED/ENOENT are retried within the budget: the real
+        server BINDS ITS OWN SOCKET at the conventional path even when
+        the socket-activation fd was passed (verified live on the T47
+        VM: ss showed the fd-mode server holding BOTH the unit's fd 3
+        AND its own bind at the same path), so right after a spawn the
+        path file may still be the previous generation's stale inode
+        for the ~1-2 s the server needs to (re)bind. Only after the
+        budget expires is the child killed and respawned. Timeout/EOF
+        failures (the hang signature) fail on the first occurrence."""
+        deadline = time.monotonic() + timeout
+        ok, detail, elapsed = False, "no probe", 0.0
+        while True:
+            ok, detail, elapsed = probe(max(deadline - time.monotonic(),
+                                            TICK), self.sock_path)
+            if ok:
+                break
+            if ("ECONNREFUSED" in detail or "ENOENT" in detail) and \
+                    time.monotonic() < deadline:
+                time.sleep(0.5)  # server still (re)binding its socket
+                continue
+            break
         if ok:
             if not self.greeted_ever:
                 log("first reply after spawn in %.2fs: %r"
@@ -268,22 +288,6 @@ class Supervisor:
             self.spawn_backoff = 0.0
             return True
         log("probe FAILED (%s): %s after %.2fs" % (label, detail, elapsed))
-        if self.use_fds and \
-                ("ECONNREFUSED" in detail or "ENOENT" in detail):
-            # FD-MODE + the path is unreachable: a listener exists
-            # (this process holds its fd) but the PATH file no longer
-            # points at it (observed live on the T47 VM: a self-bound
-            # server instance replaced the socket file while the unit's
-            # listener stayed orphaned behind it). Killing children
-            # CANNOT fix this - only a socket-unit restart re-binds the
-            # path - and speech is already broken for every new client.
-            # Exit loudly so the unit shows failed instead of silently
-            # kill-looping healthy servers.
-            log("FATAL: the socket path is orphaned from the unit's "
-                "listener (%s) - a socket-unit restart is needed to "
-                "re-bind it; exiting so the failure is visible" % detail)
-            self.fatal = True
-            return False
         self.kill(label)
         return False
 
@@ -292,7 +296,7 @@ class Supervisor:
             "probe_timeout=%.0fs startup_timeout=%.0fs"
             % (self.sock_path, SERVER, PROBE_INTERVAL, PROBE_TIMEOUT,
                STARTUP_TIMEOUT))
-        while not self.stopping and not self.fatal:
+        while not self.stopping:
             if self.child is None:
                 # (Re)spawn: exponential backoff for exiting children;
                 # a widened cadence once kills repeat without ANY greeting.
@@ -327,7 +331,7 @@ class Supervisor:
                 continue
             self.cycle(PROBE_TIMEOUT, "hang")
         self.wait_stopped_child()
-        return 1 if self.fatal else 0
+        return 0
 
 
 def main():
