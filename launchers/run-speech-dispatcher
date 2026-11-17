@@ -46,4 +46,20 @@ if [ -n "$TRIPLET" ]; then
     export LD_LIBRARY_PATH="${LD_LIBRARY_PATH:+$LD_LIBRARY_PATH:}$SNAP/usr/lib/$TRIPLET/pulseaudio"
 fi
 
-exec "$SNAP/usr/bin/speech-dispatcher" -s -t 0
+# T47: the unit's main process is now the hung-server WATCHDOG (the
+# supervisor, bin/speechd-supervisor.py), not the server itself. The
+# supervisor receives the socket-activation fd (LISTEN_FDS), spawns
+# the real server as its CHILD with LISTEN_PID rewritten, probes the
+# socket every 15 s with a connect + greeting read (10 s kill
+# threshold; 30 s startup grace), and SIGKILLs + respawns the server
+# when the greeting stops coming - the T41/T44-era wedge (server
+# alive, unresponsive, SIGTERM swallowed, restart-condition:
+# on-failure blind to it) now self-heals, riding the recovery T44
+# proved: a killed server is respawned against the same listening
+# fd and serves the next client (rc=0). The listening fd never
+# leaves this process, so connections queued during a wedge are
+# still served by the fresh server - no fight with the
+# socket-activation unit. Full rationale + the strict-template grant
+# audit (same-snap signal, snap-runtime-dir connect) in
+# notes/todo/a11y-work/T47-watchdog-lint.txt.
+exec "$SNAP/usr/bin/python3" "$SNAP/bin/speechd-supervisor.py"
