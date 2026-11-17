@@ -98,21 +98,34 @@ def activation_fds():
     return sorted(fds)
 
 
-def spawn_server():
+def spawn_server(sock_path, use_fds):
     """Fork+exec the real server; rewrite LISTEN_PID to the child."""
     pid = os.fork()
     if pid == 0:
         try:
-            # PEP 446: make sure the activation fds cross exec() even if
-            # the interpreter's startup inherited them non-inheritable.
-            for fd in activation_fds():
-                os.set_inheritable(fd, True)
+            child_fds = activation_fds()
+            if use_fds:
+                # PEP 446: make sure the activation fds cross exec()
+                # even if the interpreter's startup inherited them
+                # non-inheritable.
+                for fd in child_fds:
+                    os.set_inheritable(fd, True)
+            else:
+                # Self-bind mode: a previous server instance may have
+                # died leaving its bound socket file at the path; the
+                # deb's server needs a clean bind.
+                try:
+                    if os.path.exists(sock_path):
+                        os.unlink(sock_path)
+                except OSError:
+                    pass
             os.environ["LISTEN_PID"] = str(os.getpid())
             os.execv(SERVER, SERVER_ARGS)
         except Exception as exc:  # pragma: no cover
             log("exec %s failed: %r" % (SERVER, exc))
             os._exit(127)
-    log("spawned server pid=%d (LISTEN_FDS passed through)" % pid)
+    log("spawned server pid=%d (%s)" %
+        (pid, "LISTEN_FDS passed through" if use_fds else "self-bind mode"))
     return pid
 
 
@@ -150,8 +163,9 @@ def probe(timeout, sock_path):
 
 
 class Supervisor:
-    def __init__(self, sock_path):
+    def __init__(self, sock_path, use_fds=True):
         self.sock_path = sock_path
+        self.use_fds = use_fds
         self.child = None
         self.stopping = False
         self.greeted_ever = False
@@ -257,7 +271,7 @@ class Supervisor:
                         time.sleep(TICK)
                     if self.stopping:
                         break
-                self.child = spawn_server()
+                self.child = spawn_server(self.sock_path, self.use_fds)
                 # Startup grace probe (also arms PROBE_TIMEOUT on success).
                 self.cycle(STARTUP_TIMEOUT, "startup")
                 continue
@@ -286,26 +300,37 @@ def main():
         log("FATAL: XDG_RUNTIME_DIR unset")
         return 1
     n_fds = os.environ.get("LISTEN_FDS", "")
-    if n_fds != "1":
-        # Started outside the socket unit (e.g. manual `snap run`): the
-        # server must not race the unit's listening socket for the path.
-        log("FATAL: LISTEN_FDS=%r (expected 1). This command is the "
-            "snapd socket-activated unit; do not run it by hand."
-            % n_fds)
+    fds = activation_fds()
+    if n_fds == "1" and len(fds) < 1:
+        # systemd SAID it passed fds but none arrived as sockets:
+        # contradictory state, refuse (a spawn here serves nobody).
+        log("FATAL: LISTEN_FDS=1 but no socket fd inherited; the unit "
+            "must be started by systemd socket activation")
         return 1
     if not os.path.exists(SERVER):
         log("FATAL: server binary missing: %s" % SERVER)
         return 1
-    # The activation fd is the whole point of this unit; a spawn without
-    # it would let the server race the socket unit for the path. Refuse
-    # loudly instead (restart-condition: on-failure keeps it visible).
-    fds = activation_fds()
-    if len(fds) < int(n_fds):
-        log("FATAL: activation fds missing (LISTEN_FDS=%s, found %r); "
-            "the unit must be started by systemd socket activation"
-            % (n_fds, fds))
-        return 1
     sock_path = os.path.join(xdg, SOCK_REL)
+    if n_fds != "1":
+        # Started WITHOUT the socket-activation fd. Observed live on the
+        # T47 VM: a snapd refresh race can leave the .socket unit failed
+        # (the endured old server holds the socket path while snapd
+        # regenerates units), and a manual `snap run` never has fds.
+        # Degrade to the pre-T47 behaviour with a loud warning instead
+        # of failing the unit: speech must not die because snapd's unit
+        # generation hiccuped. The server binds the socket path itself
+        # (spawn_server unlinks the stale file per spawn - in this mode
+        # nothing else owns the path); the watchdog probe works
+        # identically against a self-bound socket, so self-healing is
+        # preserved either way. The RIGHT state is the socket unit
+        # active (fd held by systemd across kills; queued connections
+        # served by the fresh server): check
+        # snap.<snap>.speech-dispatcher.speechd-socket.socket.
+        log("WARNING: running WITHOUT the socket-activation fd "
+            "(LISTEN_FDS=%r) - the server will bind %s itself; check "
+            "the speechd-socket.socket unit" % (n_fds, sock_path))
+        Supervisor(sock_path, use_fds=False).run()
+        return 0
     Supervisor(sock_path).run()
     return 0
 
