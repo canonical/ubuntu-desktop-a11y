@@ -204,6 +204,19 @@ slots:
     bus: session
     name: org.a11y.Bus
 
+  # T54: orca's own service names (scoped to the orca app — see the
+  # app's slots comment). The dbus slot's permanent snippet carries
+  # the Request/ReleaseName sends and the dbus (bind) rule trio
+  # (exact, -PID-suffixed, dot-suffixed) for each name.
+  dbus-orca-service:
+    interface: dbus
+    bus: session
+    name: org.gnome.Orca.Service
+  dbus-orca-keyboardmonitor:
+    interface: dbus
+    bus: session
+    name: org.gnome.Orca.KeyboardMonitor
+
   # T18 E2 (T19): the provider's own daemon must be able to mediate its
   # private accessibility bus, which needs the libapparmor kernel-query
   # capability (aa_find_mountpoint reads /proc/<pid>/mounts;
@@ -251,6 +264,22 @@ apps:
 
   orca:
     command: bin/run-orca
+    slots:
+      # T54: orca owns its own session-bus service names and dies on
+      # "dbus_bind DENIED name=\"org.gnome.Orca.Service\" label=
+      # \"snap.ubuntu-desktop-a11y.orca\"" (the a11y snap's only dbus
+      # slot was dbus-a11y = org.a11y.Bus, scoped to the bus app — the
+      # orca app carried NO bind rules at all). One dbus slot per name
+      # (the dbus interface validates a SINGLE name attribute — no
+      # list form), scoped to this app via its slots list so the
+      # permanent-slot dbus (bind) rules land in the orca profile
+      # only. KeyboardMonitor bind evidence: the T51 wizard-flow
+      # journal (a11y-work/T51-wizard-speech-permanent.txt — verbatim
+      # "dbus_bind org.gnome.Orca.KeyboardMonitor" denied at orca's
+      # start; this VM's user-session boots never exercise the
+      # keyboard-monitor feature, so only Orca.Service appears there).
+      - dbus-orca-service
+      - dbus-orca-keyboardmonitor
     plugs:
       - a11y-bus-client
       # T19 phase 2: under REAL mediation (the private bus daemon now
