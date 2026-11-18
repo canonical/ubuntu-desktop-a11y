@@ -87,6 +87,30 @@ unset GDK_PIXBUF_MODULE_FILE
 # communication method in address".
 export SPEECHD_ADDRESS="unix_socket:${XDG_RUNTIME_DIR}/speech-dispatcher/speechd.sock"
 
+# T52: the wizard session's confined compositor creates its wayland
+# socket under the SESSION snap's private runtime dir
+# (/run/user/<uid>/snap.ubuntu-desktop-session/wayland-N). The manager
+# env orca.service inherits does not reliably carry a usable
+# WAYLAND_DISPLAY there: the session-snap environment-broker rewrites
+# the bare name to the absolute socket path for what flows through it,
+# but the shell's own direct SetEnvironment export lands as the bare
+# name and the manager env can drop the value entirely — orca then
+# falls back to X11, whose auth file lives in the session snap's
+# private dir this profile cannot read ("Authorization required, but no
+# authorization protocol specified" -> display None -> the T16 keymap
+# death, observed live on the T52 wizard). Resolve the session socket
+# directly instead: the wayland plug is connected to
+# ubuntu-desktop-session:wayland, and the wayland interface's slot-side
+# grant covers exactly the snap.ubuntu-desktop-session socket path, and
+# the profile grants the socket FILE (wayland-[0-9]* rw) but NOT the
+# directory listing, so probe the exact conventional socket name instead
+# of globbing. Same absolutization shape as the session snap's run.sh.
+_w="/run/user/$(id -u)/snap.ubuntu-desktop-session/wayland-0"
+if [ -z "${WAYLAND_DISPLAY:-}" ] || [ "${WAYLAND_DISPLAY#/}" = "${WAYLAND_DISPLAY}" ]; then
+	[ -S "$_w" ] && export WAYLAND_DISPLAY="$_w"
+fi
+unset _w
+
 # T23 (first user-session run on thin): orca spawns xkbcomp while
 # setting up its keyboard grab, and the user-session manager env (the
 # confined session snap's environment broker output) carries no PATH
