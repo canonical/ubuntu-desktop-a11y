@@ -6,15 +6,15 @@ version: "0.1+git20261117"
 # *** OWNER ACTION REQUIRED BEFORE ANY STORE UPLOAD: confirm/correct
 # source-code, issues and website once the repository lands at its
 # real home (these point at
-# https://github.com/chris-bainbridge/ubuntu-desktop-a11y per the T47
+# https://github.com/canonical/ubuntu-desktop-a11y per the T47
 # deliverable; if the repo is published elsewhere or renamed, these
 # three values must be updated, or the store listing will advertise a
 # wrong source). `contact` is the owner's address as briefed. ***
 title: Ubuntu Desktop Accessibility
 contact: chris.bainbridge@canonical.com
-source-code: https://github.com/chris-bainbridge/ubuntu-desktop-a11y
-issues: https://github.com/chris-bainbridge/ubuntu-desktop-a11y/issues
-website: https://github.com/chris-bainbridge/ubuntu-desktop-a11y
+source-code: https://github.com/canonical/ubuntu-desktop-a11y
+issues: https://github.com/canonical/ubuntu-desktop-a11y/issues
+website: https://github.com/canonical/ubuntu-desktop-a11y
 summary: Accessibility provider snap (AT-SPI bus, Orca, speech-dispatcher)
 description: |
   Spike 1 of the thin-line accessibility work: one strictly confined
