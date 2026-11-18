@@ -3,3 +3,5 @@
 # artifact refresh, x5-x12) stay in history; history rewrite is NOT
 # wanted (shared spike line).
 *.snap
+__pycache__/
+*.pyc

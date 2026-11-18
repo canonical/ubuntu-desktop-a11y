@@ -4,8 +4,12 @@
 Run as the MAIN process of the speech-dispatcher app (see
 bin/run-speech-dispatcher): the snapd-generated socket unit passes the
 listening fd here (LISTEN_FDS, systemd socket activation), this script
-spawns the real server as a CHILD with LISTEN_PID rewritten to the
-child's pid (sd_listen_fds requires it), and babysits it forever:
+spawns the real server as a CHILD with the fd re-passed via the
+server's own SPEECHD_SOCK_FD env hook (T50: see spawn_server below -
+sd_listen_fds cannot claim the fd under a LISTEN_PIDFDID-carrying
+supervisor, and an unclaimed fd makes the server unlink + rebind the
+socket path, orphaning orca's login connection: the first-announcement
+race), and babysits it forever:
 
   - every PROBE_INTERVAL s: connect to the snapd socket and wait for
     the server's protocol greeting, with a short timeout. connect()
@@ -26,6 +30,10 @@ child's pid (sd_listen_fds requires it), and babysits it forever:
     The listening fd never leaves this process, so connections queued
     during the wedge stay in the backlog and are served by the fresh
     server: the watchdog does not fight the socket-activation unit.
+    (T50 verified this live for the first time: with the fd properly
+    served, the watchdog kill of a wedged server preserves the queued
+    clients; before the T50 fix the fd was never claimed and the
+    "queue preservation" was unobservable.)
 
   - an exiting child (crash, external kill) is respawned with
     exponential backoff, mirroring systemd; a fresh server that never
@@ -110,6 +118,30 @@ def spawn_server(sock_path, use_fds):
                 # non-inheritable.
                 for fd in child_fds:
                     os.set_inheritable(fd, True)
+                # T50 (the first-announcement startup race): pass the
+                # activation fd NUMBER explicitly via the server's own
+                # SPEECHD_SOCK_FD hook (speechd.c:1341 - getenv + atoi,
+                # checked FIRST, no identity check). The alternative
+                # sd_listen_fds(0) claim is BROKEN under this supervisor:
+                # this systemd generation additionally passes
+                # LISTEN_PIDFDID (a pidfd of the SUPERVISOR - the unit
+                # main pid), which the server child cannot satisfy after
+                # the LISTEN_PID rewrite, so sd_listen_fds returned 0,
+                # the server fell into its unix_socket branch, UNLINKED
+                # the unit's socket path and bound its own socket there -
+                # permanently orphaning everything already queued on the
+                # unit's socket (orca's login connection AND this
+                # supervisor's first probe; verified live: ss Recv-Q=2
+                # stranded on the unit's inode for the whole session,
+                # the watchdog killed a healthy 1.1s-initialized server
+                # at the 30s startup grace, and orca's first
+                # announcements were lost - the owner's exact report).
+                # With SPEECHD_SOCK_FD the server serves the unit's
+                # socket fd directly: no unlink, no rebind, the
+                # pre-spawn backlog is served, and the fd stays with
+                # the socket unit across watchdog kills (the fd-mode
+                # queue-preservation property becomes real).
+                os.environ["SPEECHD_SOCK_FD"] = str(child_fds[0])
             else:
                 # Self-bind mode: a previous server instance may have
                 # died leaving its bound socket file at the path; the
@@ -258,15 +290,18 @@ class Supervisor:
     def cycle(self, timeout, label):
         """One probe against the current child. Returns success.
 
-        ECONNREFUSED/ENOENT are retried within the budget: the real
-        server BINDS ITS OWN SOCKET at the conventional path even when
-        the socket-activation fd was passed (verified live on the T47
-        VM: ss showed the fd-mode server holding BOTH the unit's fd 3
-        AND its own bind at the same path), so right after a spawn the
-        path file may still be the previous generation's stale inode
-        for the ~1-2 s the server needs to (re)bind. Only after the
-        budget expires is the child killed and respawned. Timeout/EOF
-        failures (the hang signature) fail on the first occurrence."""
+        ECONNREFUSED/ENOENT are retried within the budget: in SELF-BIND
+        mode the server binds the path itself and right after a spawn
+        the path file may still be the previous generation's stale
+        inode for the ~1-2 s the server needs to (re)bind. (Before the
+        T50 fix the fd-MODE server also self-bound - it could not claim
+        the activation fd under LISTEN_PIDFDID - which made the first
+        spawn's probe connect to the ORPHANED unit socket and fail
+        always; with SPEECHD_SOCK_FD the fd-mode server serves the
+        unit's socket directly and the first probe is answered as soon
+        as the main loop starts.) Only after the budget expires is the
+        child killed and respawned. Timeout/EOF failures (the hang
+        signature) fail on the first occurrence."""
         deadline = time.monotonic() + timeout
         ok, detail, elapsed = False, "no probe", 0.0
         while True:

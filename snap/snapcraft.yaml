@@ -1,6 +1,6 @@
 name: ubuntu-desktop-a11y
 base: core26
-version: "0.1+git20261117"
+version: "0.1+git20261118"
 # T47 (the T40 C13 lint): the store metadata keys. The three repo URLs
 # below are the INTENDED GitHub home - THE REPO HAS NO REMOTE TODAY.
 # *** OWNER ACTION REQUIRED BEFORE ANY STORE UPLOAD: confirm/correct
@@ -148,6 +148,25 @@ layout:
   # not exist at all. Bind the staged dir over the absolute path.
   /usr/lib/$CRAFT_ARCH_TRIPLET_BUILD_FOR/speech-dispatcher:
     bind: $SNAP/usr/lib/$CRAFT_ARCH_TRIPLET_BUILD_FOR/speech-dispatcher
+  # T50: the speechd locale pronunciation dictionaries. The deb stages
+  # them at $SNAP/usr/share/speech-dispatcher/locale/ (verified in the
+  # packed artifact: 182 language dirs, 366 .dic files) but the
+  # server's compiled-in lookup path is the ABSOLUTE
+  # /usr/share/speech-dispatcher/locale (symbols.c:724, LOCALE_DATA),
+  # which resolves against the BASE's /usr in this snap's namespace -
+  # core26 ships no speech-dispatcher at all, so every lookup failed
+  # ("Failed to open file '/usr/share/speech-dispatcher/locale/en_US/
+  # gender-neutral.dic'" - the owner's benign-'c'-locale noise; the
+  # symbols/emojis dictionaries that DO exist staged never loaded).
+  # Bind the staged tree at the compiled-in path (the same pattern as
+  # the modules dir above; conflict-free: the base lacks the path).
+  # Residual noise after this fix: gender-neutral.dic and
+  # font-variants.dic are absent for most languages IN THE DEB ITSELF
+  # (verified: locale/en/ ships only emojis.dic + symbols.dic), so
+  # those two "Failed to open file" lines remain on stock Ubuntu too -
+  # upstream verbosity, not a packaging gap.
+  /usr/share/speech-dispatcher:
+    bind: $SNAP/usr/share/speech-dispatcher
 
 environment:
   # pipewire-snap env/LD_LIBRARY_PATH precedent; host paths first so
@@ -333,6 +352,11 @@ parts:
   launchers:
     plugin: dump
     source: launchers
+    build-packages:
+      # T50: gcc compiles sem-snap-shim.c (see override-build; the
+      # snapcraft LXD build env is minimal, nothing to assume).
+      - gcc
+      - libc6-dev
     organize:
       launch-a11y-bus: bin/launch-a11y-bus
       run-orca: bin/run-orca
@@ -342,6 +366,27 @@ parts:
       # speech-dispatcher app comment below and
       # notes/todo/a11y-work/T47-watchdog-lint.txt).
       speechd-supervisor.py: bin/speechd-supervisor.py
+    override-build: |
+      craftctl default
+      # T50: the snap-scoped sem_open shim (launchers/sem-snap-shim.c
+      # header comment) - LD_PRELOADed onto the speechd server + its
+      # output-module children by bin/run-speech-dispatcher, so the
+      # shipped sd_dummy module survives the strict template's scoped
+      # /dev/shm grant instead of SEM_FAILED + SIGSEGV (the T20 E3
+      # crash that kept sd_dummy stage-filtered out until now). The
+      # shim IMPLEMENTS sem_open natively (open + ftruncate + mmap +
+      # sem_init on the mapped sem.snap.<instance>.* path): glibc's own
+      # sem_open creates its backing file via mknod at an internal
+      # RANDOM temp name no template rule can grant (verbatim AVC
+      # name="/dev/shm/sem.OwoID8" requested_mask="c" on the T50 VM),
+      # so a name-mapping shim alone cannot work.
+      mkdir -p "$CRAFT_PART_INSTALL/lib"
+      gcc -shared -fPIC -O2 -Wall \
+        -o "$CRAFT_PART_INSTALL/lib/sem-snap-shim.so" \
+        "$CRAFT_PART_INSTALL/sem-snap-shim.c" -ldl
+      # the dumped source must not ship in the snap
+      rm -f "$CRAFT_PART_INSTALL/sem-snap-shim.c"
+      test -s "$CRAFT_PART_INSTALL/lib/sem-snap-shim.so"
 
   a11y-stack:
     plugin: nil
@@ -567,6 +612,20 @@ parts:
       # EACCES -> SIGSEGV -> server restart loop -> start-limit). The
       # DefaultModule override above selects it. sd_espeak-ng-mbrola is
       # a sd_generic-family module needing mbrola voices (not staged).
-      - -usr/lib/speech-dispatcher-modules/sd_dummy
+      # T50 REVISION: sd_dummy is SHIPPED again - bin/run-speech-
+      # dispatcher now LD_PRELOADs the snap-scoped sem_open shim
+      # (launchers/sem-snap-shim.c), which maps the module's unscoped
+      # semaphore name into the template's granted
+      # sem.snap.<instance>.* namespace, so the module initializes and
+      # its last-resort "tell what is happening" function works; with
+      # DefaultModule espeak-ng the dummy is never selected for normal
+      # speech. WITHOUT the shim the shipped module would SIGSEGV at
+      # init exactly as in the E3 trace (the sem name is
+      # "/speechd-modules-dummy-%d", fixed in dummy.c:76 - it must not
+      # ship unpatched). sd_generic stays excluded: nothing requests it
+      # (its AddModule lines are commented out; auto-detect never runs
+      # because espeak-ng is explicitly requested) and its sem_open
+      # failure would only be dead weight; sd_espeak-ng-mbrola needs
+      # mbrola voices (not staged).
       - -usr/lib/speech-dispatcher-modules/sd_generic
       - -usr/lib/speech-dispatcher-modules/sd_espeak-ng-mbrola
