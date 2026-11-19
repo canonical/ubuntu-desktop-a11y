@@ -436,6 +436,22 @@ parts:
       # Registry", no peer_label). snapd's own generated activation
       # files carry the same field (T13 §1b).
       printf 'AssumedAppArmorLabel=snap.ubuntu-desktop-a11y.bus\n' >> "$CRAFT_STAGE/usr/share/dbus-1/accessibility-services/org.a11y.atspi.Registry.service"
+      # Fail-closed mediation for the private accessibility bus. The
+      # deb's accessibility.conf carries no <apparmor> element, so
+      # dbus-daemon runs in its default "enabled" mode: mediation is
+      # attempted but FAILS OPEN when the kernel query primitives are
+      # unavailable. The provider daemon's primitives
+      # (/proc/<pid>/mounts + apparmor .access + lsm_get_self_attr) are
+      # connected-slot grants that ride the reader connection — the
+      # documented consent act — so a daemon started after a reader
+      # disconnect would otherwise come up mediating NOTHING while
+      # still serving the bus. <apparmor mode="required"/> makes
+      # dbus-daemon refuse to start without working AppArmor support:
+      # losing the consent plug stops the mediation (and the bus)
+      # instead of leaving it unmediated.
+      if ! grep -q '<apparmor' "$CRAFT_STAGE/usr/share/defaults/at-spi2/accessibility.conf"; then
+        sed -i 's|^</busconfig>|  <apparmor mode="required"/>\n</busconfig>|' "$CRAFT_STAGE/usr/share/defaults/at-spi2/accessibility.conf"
+      fi
       # E3 (T20 strace finding): the deb's speechd.conf ships every
       # AddModule line AND DefaultModule commented out, so speechd
       # auto-detects whatever binaries sit in the module dir and falls
