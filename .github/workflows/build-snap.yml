@@ -1,0 +1,68 @@
+name: build-snap
+on:
+  pull_request:
+  push:
+    branches:
+      - desktop/26
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  snap:
+    # amd64 on ubuntu-26.04, arm64 natively on ubuntu-26.04-arm (no
+    # QEMU: snapcraft builds the platform matching the host arch).
+    # Both labels pinned rather than ubuntu-latest: `ubuntu-latest`
+    # still means 24.04, and these match the image workflows in
+    # canonical/ubuntu-core-desktop.
+    #
+    # The snap's base is stock core26 (no core26-desktop swap trick
+    # like the provider snaps), so snapcraft builds inside an LXD
+    # instance of the base and the runner only provides snapcraft.
+    # Asset names are fixed so canonical/ubuntu-core-desktop can
+    # download them by name: ubuntu-desktop-a11y.snap / -arm64.snap.
+    # This snap is image-seeded and never uploaded to the Snap Store.
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-26.04
+            suffix: ""
+          - runner: ubuntu-26.04-arm
+            suffix: "-arm64"
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Stamp version from git
+        # `git rev-parse` inside the LXD build instance is unreliable (a
+        # git worktree's .git file points at an absolute host path), so
+        # stamp on the runner, where the checkout is a real repository.
+        # The committed value stays as the working default for a plain
+        # local `snapcraft pack`.
+        run: |
+          v="$(git rev-parse --short HEAD)"
+          sed -i "s/^version: .*/version: \"$(date -u +%Y%m%d)+git${v}\"/" snap/snapcraft.yaml
+          grep -n '^version:' snap/snapcraft.yaml
+      - uses: snapcore/action-build@v1
+        id: snapcraft
+        with:
+          snapcraft-channel: edge
+      - name: Normalize snap filename
+        run: cp "${{ steps.snapcraft.outputs.snap }}" "ubuntu-desktop-a11y${{ matrix.suffix }}.snap"
+      - name: Publish to desktop-26-latest release
+        if: github.event_name != 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view desktop-26-latest -R "$GITHUB_REPOSITORY" >/dev/null 2>&1 \
+            || gh release create desktop-26-latest -R "$GITHUB_REPOSITORY" \
+                 --title "desktop/26 latest snap" \
+                 --notes "Rolling latest desktop/26 snap build; assets are replaced on every green build."
+          gh release upload desktop-26-latest "ubuntu-desktop-a11y${{ matrix.suffix }}.snap" -R "$GITHUB_REPOSITORY" --clobber
+      - uses: actions/upload-artifact@v4
+        with:
+          name: snap${{ matrix.suffix }}
+          path: "ubuntu-desktop-a11y${{ matrix.suffix }}.snap"
+          compression-level: 0
+          retention-days: 14

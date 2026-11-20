@@ -2,14 +2,13 @@ name: ubuntu-desktop-a11y
 base: core26
 version: "0.1+git20261118"
 # T47 (the T40 C13 lint): the store metadata keys. The three repo URLs
-# below are the INTENDED GitHub home - THE REPO HAS NO REMOTE TODAY.
-# *** OWNER ACTION REQUIRED BEFORE ANY STORE UPLOAD: confirm/correct
-# source-code, issues and website once the repository lands at its
-# real home (these point at
-# https://github.com/canonical/ubuntu-desktop-a11y per the T47
-# deliverable; if the repo is published elsewhere or renamed, these
-# three values must be updated, or the store listing will advertise a
-# wrong source). `contact` is the owner's address as briefed. ***
+# below now point at the real GitHub home,
+# https://github.com/canonical/ubuntu-desktop-a11y. The snap is built
+# by CI and published only as a rolling desktop-26-latest release
+# artifact (image-seeded, never uploaded to the Snap Store), so these
+# values are not yet store-listing-critical; if the repo is renamed or
+# moved, update them anyway. `contact` is the owner's address as
+# briefed.
 title: Ubuntu Desktop Accessibility
 contact: chris.bainbridge@canonical.com
 source-code: https://github.com/canonical/ubuntu-desktop-a11y
@@ -56,6 +55,9 @@ platforms:
   amd64:
     build-on: [amd64]
     build-for: [amd64]
+  arm64:
+    build-on: [arm64]
+    build-for: [arm64]
 
 # Absolute paths that at-spi-bus-launcher / dbus-daemon / libespeak-ng
 # reach for inside the mount namespace (verified via strings on the
