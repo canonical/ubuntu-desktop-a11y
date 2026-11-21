@@ -33,7 +33,7 @@ jobs:
             suffix: "-arm64"
     runs-on: ${{ matrix.runner }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Stamp version from git
         # `git rev-parse` inside the LXD build instance is unreliable (a
         # git worktree's .git file points at an absolute host path), so
@@ -60,7 +60,7 @@ jobs:
                  --title "desktop/26 latest snap" \
                  --notes "Rolling latest desktop/26 snap build; assets are replaced on every green build."
           gh release upload desktop-26-latest "ubuntu-desktop-a11y${{ matrix.suffix }}.snap" -R "$GITHUB_REPOSITORY" --clobber
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v6
         with:
           name: snap${{ matrix.suffix }}
           path: "ubuntu-desktop-a11y${{ matrix.suffix }}.snap"
